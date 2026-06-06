@@ -2,6 +2,7 @@ package com.example.taskscheduler.dto;
 
 import com.example.taskscheduler.domain.enums.TaskPriority;
 import com.example.taskscheduler.domain.enums.TaskType;
+import com.example.taskscheduler.validation.JsonSizeWithin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -36,11 +37,13 @@ public class CreateTaskRequest {
     /**
      * Task-specific data to be used by the handler
      */
+    @JsonSizeWithin(maxBytes = 65_536, message = "payload exceeds maximum size (64 KiB)")
     private Map<String, Object> payload;
 
     /**
      * Control metadata for task execution
      */
+    @JsonSizeWithin(maxBytes = 65_536, message = "metadata exceeds maximum size (64 KiB)")
     private Map<String, Object> metadata;
 
     /**
