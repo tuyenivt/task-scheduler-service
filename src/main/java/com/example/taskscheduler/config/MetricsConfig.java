@@ -11,6 +11,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -65,21 +67,28 @@ public class MetricsConfig {
     }
 
     /**
-     * Periodically update gauge metrics from database
+     * Periodically update gauge metrics from the database.
+     * <p>
+     * A single grouped query populates every per-status gauge and the queue
+     * depth — collapsing what used to be one query per status (~12 calls per
+     * tick) into one. Statuses absent from the result default to zero so
+     * gauges decay correctly when a status empties out.
      */
     @Scheduled(fixedDelayString = "${task-scheduler.metrics-update-interval-ms:60000}")
     public void updateMetrics() {
-        // Update status counts
-        for (var status : TaskStatus.values()) {
-            var count = taskRepository.countByStatus(status);
-            var key = "status_" + status.name().toLowerCase();
-            taskCounters.get(key).set(count);
+        Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
+        for (var row : taskRepository.getTaskStatsByStatus()) {
+            counts.put((TaskStatus) row[0], (Long) row[1]);
         }
 
-        // Update queue depth (executable tasks)
-        var queueDepth = taskRepository.countByStatus(TaskStatus.PENDING) +
-                taskRepository.countByStatus(TaskStatus.RETRY_PENDING) +
-                taskRepository.countByStatus(TaskStatus.SCHEDULED);
+        for (var status : TaskStatus.values()) {
+            var key = "status_" + status.name().toLowerCase();
+            taskCounters.get(key).set(counts.getOrDefault(status, 0L));
+        }
+
+        var queueDepth = counts.getOrDefault(TaskStatus.PENDING, 0L)
+                + counts.getOrDefault(TaskStatus.RETRY_PENDING, 0L)
+                + counts.getOrDefault(TaskStatus.SCHEDULED, 0L);
         taskCounters.get("queue_depth").set(queueDepth);
     }
 

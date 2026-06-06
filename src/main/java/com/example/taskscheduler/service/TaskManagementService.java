@@ -411,12 +411,15 @@ public class TaskManagementService {
     public TaskStatistics getStatistics() {
         var stats = new TaskStatistics();
 
-        // Status distribution
+        // Status distribution — one grouped query feeds both the distribution
+        // map and the summary roll-ups, avoiding redundant countByStatus calls.
         var statusCounts = new HashMap<String, Long>();
+        var byStatus = new EnumMap<TaskStatus, Long>(TaskStatus.class);
         for (var row : taskRepository.getTaskStatsByStatus()) {
             var status = (TaskStatus) row[0];
             var count = (Long) row[1];
             statusCounts.put(status.name(), count);
+            byStatus.put(status, count);
         }
         stats.setStatusDistribution(statusCounts);
 
@@ -430,14 +433,14 @@ public class TaskManagementService {
         }
         stats.setTypeStatusDistribution(typeCounts);
 
-        // Summary counts
-        stats.setPendingCount(taskRepository.countByStatus(TaskStatus.PENDING) +
-                taskRepository.countByStatus(TaskStatus.RETRY_PENDING) +
-                taskRepository.countByStatus(TaskStatus.SCHEDULED));
-        stats.setProcessingCount(taskRepository.countByStatus(TaskStatus.PROCESSING));
-        stats.setFailedCount(taskRepository.countByStatus(TaskStatus.FAILED) +
-                taskRepository.countByStatus(TaskStatus.MAX_RETRIES_EXCEEDED));
-        stats.setCompletedCount(taskRepository.countByStatus(TaskStatus.COMPLETED));
+        // Summary roll-ups derived from the same grouped result above.
+        stats.setPendingCount(byStatus.getOrDefault(TaskStatus.PENDING, 0L)
+                + byStatus.getOrDefault(TaskStatus.RETRY_PENDING, 0L)
+                + byStatus.getOrDefault(TaskStatus.SCHEDULED, 0L));
+        stats.setProcessingCount(byStatus.getOrDefault(TaskStatus.PROCESSING, 0L));
+        stats.setFailedCount(byStatus.getOrDefault(TaskStatus.FAILED, 0L)
+                + byStatus.getOrDefault(TaskStatus.MAX_RETRIES_EXCEEDED, 0L));
+        stats.setCompletedCount(byStatus.getOrDefault(TaskStatus.COMPLETED, 0L));
 
         return stats;
     }
