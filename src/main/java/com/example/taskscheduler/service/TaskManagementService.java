@@ -17,6 +17,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +60,18 @@ public class TaskManagementService {
         // burning a retry counter.
         var handler = handlerRegistry.getHandlerOrThrow(request.getTaskType());
         handler.validateForCreate(request);
+
+        // Reject syntactically invalid cron expressions up-front. A bad cron
+        // would otherwise only surface on first successful execution when the
+        // executor tries to compute the next fire time.
+        if (request.getCronExpression() != null && !request.getCronExpression().isBlank()) {
+            try {
+                CronExpression.parse(request.getCronExpression());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "Invalid cron expression: " + e.getMessage(), e);
+            }
+        }
 
         // Check for duplicate active task
         if (request.isPreventDuplicates()) {

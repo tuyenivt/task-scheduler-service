@@ -137,6 +137,60 @@ class TaskExecutorServiceTest {
         }
 
         @Test
+        @DisplayName("Should reschedule recurring task to SCHEDULED with next fire time")
+        void shouldRescheduleRecurringTaskOnSuccess() {
+            // Given a task with a daily cron
+            testTask.setCronExpression("0 0 0 * * *");
+            testTask.setRetryCount(3);
+            when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
+            when(executionLogRepository.save(any(TaskExecutionLog.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(handlerRegistry.getHandlerOrThrow(TaskType.ORDER_CANCEL)).thenReturn(mockHandler);
+            when(mockHandler.execute(any())).thenReturn(TaskExecutionResult.success(Map.of()));
+            when(taskRepository.save(any(ScheduledTask.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // When
+            boolean result = taskExecutorService.executeTask(testTask);
+
+            // Then: status is SCHEDULED, retryCount reset, scheduledTime advanced
+            assertThat(result).isTrue();
+            verify(taskRepository).save(taskCaptor.capture());
+            ScheduledTask saved = taskCaptor.getValue();
+            assertThat(saved.getStatus()).isEqualTo(TaskStatus.SCHEDULED);
+            assertThat(saved.getRetryCount()).isZero();
+            assertThat(saved.getScheduledTime()).isAfter(Instant.now());
+            assertThat(saved.getCompletedAt()).isNull();
+            assertThat(saved.getLockedBy()).isNull();
+        }
+
+        @Test
+        @DisplayName("Should complete recurring task when next fire is past expiresAt")
+        void shouldCompleteRecurringTaskWhenExpired() {
+            // Given: daily cron with expiresAt set to "now + 60s" — execution proceeds
+            // (canExecute passes) but the next fire (next midnight UTC) is well past
+            // expiresAt, so the executor falls through to COMPLETED rather than
+            // SCHEDULED.
+            testTask.setCronExpression("0 0 0 * * *");
+            testTask.setExpiresAt(Instant.now().plusSeconds(60));
+            when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
+            when(executionLogRepository.save(any(TaskExecutionLog.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(handlerRegistry.getHandlerOrThrow(TaskType.ORDER_CANCEL)).thenReturn(mockHandler);
+            when(mockHandler.execute(any())).thenReturn(TaskExecutionResult.success(Map.of()));
+            when(taskRepository.save(any(ScheduledTask.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // When
+            boolean result = taskExecutorService.executeTask(testTask);
+
+            // Then
+            assertThat(result).isTrue();
+            verify(taskRepository).save(taskCaptor.capture());
+            ScheduledTask saved = taskCaptor.getValue();
+            assertThat(saved.getStatus()).isEqualTo(TaskStatus.COMPLETED);
+            assertThat(saved.getCompletedAt()).isNotNull();
+        }
+
+        @Test
         @DisplayName("Should handle task failure with retry")
         void shouldHandleTaskFailureWithRetry() {
             // Given

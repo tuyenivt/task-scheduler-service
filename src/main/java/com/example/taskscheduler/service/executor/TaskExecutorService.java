@@ -16,12 +16,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.InetAddress;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -260,9 +263,23 @@ public class TaskExecutorService {
     private void handleSuccess(ScheduledTask task, TaskExecutionLog executionLog, TaskExecutionResult result, Instant endTime, long durationMs) {
         log.info("Task {} completed successfully in {}ms", task.getId(), durationMs);
 
-        // Update task
-        task.setStatus(TaskStatus.COMPLETED);
-        task.setCompletedAt(endTime);
+        var nextFire = computeNextCronFire(task, endTime);
+
+        if (nextFire != null) {
+            // Recurring task: reschedule for next fire. retryCount resets so each
+            // fire has its own retry budget.
+            task.setStatus(TaskStatus.SCHEDULED);
+            task.setScheduledTime(nextFire);
+            task.setRetryCount(0);
+            task.setStartedAt(null);
+            task.setCompletedAt(null);
+            log.info("Task {} is recurring; next fire scheduled at {}", task.getId(), nextFire);
+        } else {
+            // One-shot success (or recurring task past its expiry / cron exhausted)
+            task.setStatus(TaskStatus.COMPLETED);
+            task.setCompletedAt(endTime);
+        }
+
         task.setExecutionDurationMs(durationMs);
         task.setLastError(null);
         task.setLastErrorStackTrace(null);
@@ -270,16 +287,10 @@ public class TaskExecutorService {
         task.setLockedBy(null);
         task.setLockedUntil(null);
 
-        // Check for recurring task
-        if (task.getCronExpression() != null && !task.getCronExpression().isBlank()) {
-            // Calculate next execution time from cron expression
-            // For now, recurring tasks need external rescheduling
-            log.info("Task {} is recurring, would need rescheduling", task.getId());
-        }
-
         taskRepository.save(task);
 
-        // Update execution log
+        // Update execution log — the just-finished attempt is always COMPLETED here,
+        // independent of whether the parent task is one-shot or recurring.
         executionLog.setStatus(TaskStatus.COMPLETED);
         executionLog.setCompletedAt(endTime);
         executionLog.setDurationMs(durationMs);
@@ -287,6 +298,41 @@ public class TaskExecutorService {
         executionLog.setResponsePayload(result.getResponseData());
         executionLog.setHttpStatusCode(result.getHttpStatusCode());
         executionLogRepository.save(executionLog);
+    }
+
+    /**
+     * Compute the next fire time for a recurring task, or null if the task is
+     * one-shot, the cron expression is exhausted, or the next fire would be past
+     * the task's {@code expiresAt}. The cron is evaluated in UTC; the entity's
+     * {@code scheduledTime} is an {@code Instant}, so a UTC interpretation keeps
+     * the cron's wall-clock semantics consistent across instances.
+     */
+    private Instant computeNextCronFire(ScheduledTask task, Instant from) {
+        var expr = task.getCronExpression();
+        if (expr == null || expr.isBlank()) {
+            return null;
+        }
+
+        CronExpression cron;
+        try {
+            cron = CronExpression.parse(expr);
+        } catch (IllegalArgumentException e) {
+            // Validated at create time, but if it slipped through (legacy row),
+            // log and fall back to terminal COMPLETED rather than crashing.
+            log.warn("Task {} has invalid cron expression '{}'; treating as one-shot: {}",
+                    task.getId(), expr, e.getMessage());
+            return null;
+        }
+
+        var next = cron.next(LocalDateTime.ofInstant(from, ZoneOffset.UTC));
+        if (next == null) {
+            return null;
+        }
+        var nextInstant = next.toInstant(ZoneOffset.UTC);
+        if (task.getExpiresAt() != null && !nextInstant.isBefore(task.getExpiresAt())) {
+            return null;
+        }
+        return nextInstant;
     }
 
     private void handleFailure(ScheduledTask task, TaskExecutionLog executionLog, TaskExecutionResult result, Instant endTime, long durationMs) {

@@ -151,6 +151,27 @@ class TaskManagementServiceTest {
         }
 
         @Test
+        @DisplayName("Should reject creation when cron expression is invalid")
+        void shouldRejectInvalidCronExpression() {
+            // Given
+            CreateTaskRequest request = CreateTaskRequest.builder()
+                    .taskType(TaskType.ORDER_CANCEL)
+                    .referenceId("ORD-CRON")
+                    .cronExpression("not a cron")
+                    .preventDuplicates(false)
+                    .build();
+
+            when(handlerRegistry.getHandlerOrThrow(TaskType.ORDER_CANCEL)).thenReturn(taskHandler);
+
+            // When/Then
+            assertThatThrownBy(() -> taskManagementService.createTask(request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Invalid cron expression");
+            verify(taskRepository, never()).save(any());
+            verify(taskRepository, never()).existsActiveTaskForReference(any(), any());
+        }
+
+        @Test
         @DisplayName("Should reject creation when handler validation throws")
         void shouldRejectWhenHandlerValidationFails() {
             // Given
