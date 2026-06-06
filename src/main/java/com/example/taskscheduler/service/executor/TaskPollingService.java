@@ -160,35 +160,49 @@ public class TaskPollingService {
     }
 
     /**
-     * Cleanup stale tasks - runs periodically to handle orphaned locks.
+     * Cleanup stale tasks - reset rows whose lock window expired at least a
+     * grace period ago, so the original lock-holder is almost certainly gone.
      * <p>
-     * Tasks can become stale if:
-     * - Instance crashes while processing
-     * - Task execution times out
-     * - Network partitions occur
+     * Abandonment is proved by two layers:
+     * <ol>
+     *   <li>The {@code lockDurationMinutes} contract: it must strictly exceed
+     *       any handler's worst-case execution time. A live handler will renew
+     *       (via task completion) before its lock window ends.</li>
+     *   <li>An extra {@code staleTaskGraceMinutes} buffer beyond the lock
+     *       window to tolerate clock skew and short GC pauses.</li>
+     * </ol>
+     * The conditional UPDATE inside {@code resetStaleTasks} additionally guards
+     * against a concurrent executor re-acquiring the lock between the read and
+     * the reset.
      */
     @Scheduled(fixedDelayString = "${task-scheduler.stale-task-check-interval-ms:300000}")
     @SchedulerLock(name = "staleTaskCleanup", lockAtLeastFor = "30s", lockAtMostFor = "5m")
     public void cleanupStaleTasks() {
         try {
-            var threshold = Instant.now().minusSeconds(properties.getStaleTaskThresholdMinutes() * 60L);
+            var now = Instant.now();
+            var cutoff = now.minusSeconds(properties.getStaleTaskGraceMinutes() * 60L);
 
-            var staleTasks = taskRepository.findStaleTasks(threshold);
+            var staleTasks = taskRepository.findStaleTasks(cutoff);
 
             if (staleTasks.isEmpty()) {
                 log.debug("No stale tasks found");
                 return;
             }
 
-            log.warn("Found {} stale tasks, resetting for retry", staleTasks.size());
+            log.warn("Found {} candidate stale tasks (lock expired before {}), attempting reset",
+                    staleTasks.size(), cutoff);
 
             var taskIds = staleTasks.stream().map(ScheduledTask::getId).toList();
+            var nextRetryTime = now.plusSeconds(60);
 
-            // Schedule retry for next polling cycle
-            var nextRetryTime = Instant.now().plusSeconds(60);
-
-            var resetCount = taskRepository.resetStaleTasks(taskIds, nextRetryTime, Instant.now());
-            log.info("Reset {} stale tasks for retry", resetCount);
+            var resetCount = taskRepository.resetStaleTasks(taskIds, nextRetryTime, now, cutoff);
+            var skipped = staleTasks.size() - resetCount;
+            if (skipped > 0) {
+                log.info("Reset {} stale tasks for retry; {} skipped (lock re-acquired concurrently)",
+                        resetCount, skipped);
+            } else {
+                log.info("Reset {} stale tasks for retry", resetCount);
+            }
         } catch (Exception e) {
             log.error("Error cleaning up stale tasks: {}", e.getMessage(), e);
         }

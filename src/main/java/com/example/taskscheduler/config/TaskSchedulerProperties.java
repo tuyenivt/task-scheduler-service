@@ -47,14 +47,35 @@ public class TaskSchedulerProperties {
     private int defaultRetryDelayHours = 24;
 
     /**
-     * Lock duration in minutes
+     * Lock duration in minutes.
+     * <p>
+     * Contract: must strictly exceed any handler's worst-case execution time
+     * (including all retries within a single dispatch) plus a safety margin for
+     * GC pauses and clock skew. Setting this too low risks resetting an
+     * in-flight task and causing duplicate external side effects.
      */
     @Min(1)
     private int lockDurationMinutes = 30;
 
     /**
-     * Threshold in minutes after which a locked task is considered stale
+     * Threshold in minutes after which a locked task is considered stale.
+     * <p>
+     * Retained for backward compatibility but no longer drives the abandonment
+     * check directly — {@link #staleTaskGraceMinutes} is the authoritative knob.
      */
     @Min(1)
     private int staleTaskThresholdMinutes = 60;
+
+    /**
+     * Extra grace period (in minutes) added to {@code lockedUntil} before a row
+     * is treated as abandoned by the stale-task cleanup job.
+     * <p>
+     * A row is reset only when {@code locked_until + grace < now}, i.e. the lock
+     * window has been expired for at least {@code grace} minutes. This makes the
+     * abandonment check robust to clock skew and short GC pauses on the
+     * lock-holder. Combined with the {@link #lockDurationMinutes} contract,
+     * resetting a row implies the original holder is almost certainly gone.
+     */
+    @Min(1)
+    private int staleTaskGraceMinutes = 5;
 }

@@ -128,7 +128,7 @@ class TaskPollingServiceTest {
         @DisplayName("Should reset stale tasks")
         void shouldResetStaleTasks() {
             // Given
-            when(properties.getStaleTaskThresholdMinutes()).thenReturn(60);
+            when(properties.getStaleTaskGraceMinutes()).thenReturn(5);
             var staleTask = ScheduledTask.builder()
                     .id(UUID.randomUUID())
                     .taskType(TaskType.PAYMENT_REFUND)
@@ -139,28 +139,54 @@ class TaskPollingServiceTest {
 
             when(taskRepository.findStaleTasks(any(Instant.class)))
                     .thenReturn(List.of(staleTask));
-            when(taskRepository.resetStaleTasks(anyList(), any(Instant.class), any(Instant.class)))
+            when(taskRepository.resetStaleTasks(anyList(), any(Instant.class), any(Instant.class), any(Instant.class)))
                     .thenReturn(1);
 
             // When
             taskPollingService.cleanupStaleTasks();
 
             // Then
-            verify(taskRepository).resetStaleTasks(anyList(), any(Instant.class), any(Instant.class));
+            verify(taskRepository).resetStaleTasks(anyList(), any(Instant.class), any(Instant.class), any(Instant.class));
+        }
+
+        @Test
+        @DisplayName("Should skip when concurrent executor re-acquired the lock")
+        void shouldReportSkippedWhenLockRaced() {
+            // Given a stale candidate, but the conditional UPDATE returns 0 because
+            // the lock was re-acquired between the read and the reset.
+            when(properties.getStaleTaskGraceMinutes()).thenReturn(5);
+            var staleTask = ScheduledTask.builder()
+                    .id(UUID.randomUUID())
+                    .taskType(TaskType.PAYMENT_REFUND)
+                    .status(TaskStatus.PROCESSING)
+                    .lockedBy("crashed-instance")
+                    .lockedUntil(Instant.now().minusSeconds(7200))
+                    .build();
+
+            when(taskRepository.findStaleTasks(any(Instant.class)))
+                    .thenReturn(List.of(staleTask));
+            when(taskRepository.resetStaleTasks(anyList(), any(Instant.class), any(Instant.class), any(Instant.class)))
+                    .thenReturn(0);
+
+            // When
+            taskPollingService.cleanupStaleTasks();
+
+            // Then - no exception thrown, reset still attempted
+            verify(taskRepository).resetStaleTasks(anyList(), any(Instant.class), any(Instant.class), any(Instant.class));
         }
 
         @Test
         @DisplayName("Should handle no stale tasks")
         void shouldHandleNoStaleTasks() {
             // Given
-            when(properties.getStaleTaskThresholdMinutes()).thenReturn(60);
+            when(properties.getStaleTaskGraceMinutes()).thenReturn(5);
             when(taskRepository.findStaleTasks(any(Instant.class))).thenReturn(List.of());
 
             // When
             taskPollingService.cleanupStaleTasks();
 
             // Then
-            verify(taskRepository, never()).resetStaleTasks(anyList(), any(), any());
+            verify(taskRepository, never()).resetStaleTasks(anyList(), any(), any(), any());
         }
     }
 }

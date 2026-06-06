@@ -70,8 +70,13 @@ task-scheduler:
   # Task lock duration (prevents other instances from picking same task)
   lock-duration-minutes: ${LOCK_DURATION_MINUTES:30}
 
-  # Stale task threshold (tasks locked longer than this are considered stale)
+  # Stale task threshold (legacy; retained for compatibility)
   stale-task-threshold-minutes: ${STALE_TASK_THRESHOLD_MINUTES:60}
+
+  # Grace period beyond locked_until before a row is treated as abandoned.
+  # Combined with lock-duration-minutes, this proves the original lock-holder
+  # is almost certainly gone before the cleanup job resets the row.
+  stale-task-grace-minutes: ${STALE_TASK_GRACE_MINUTES:5}
 
 external-services:
   order-service:

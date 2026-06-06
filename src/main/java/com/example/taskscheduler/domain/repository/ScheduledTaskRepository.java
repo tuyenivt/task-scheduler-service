@@ -115,19 +115,29 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
             @Param("now") Instant now);
 
     /**
-     * Find stale locked tasks (locked longer than threshold)
-     * These may have been abandoned due to instance crash
+     * Find stale locked tasks whose lock window expired at least a grace period ago.
+     * <p>
+     * The caller passes {@code cutoff = now - grace}; rows with
+     * {@code lockedUntil < cutoff} are those whose advertised lock window ended
+     * more than {@code grace} ago and are therefore safe to treat as abandoned
+     * (assuming {@code lockDurationMinutes} strictly exceeds handler worst-case).
      */
     @Query("""
             SELECT t FROM ScheduledTask t
             WHERE t.lockedBy IS NOT NULL
-              AND t.lockedUntil < :threshold
+              AND t.lockedUntil < :cutoff
               AND t.status = 'PROCESSING'
             """)
-    List<ScheduledTask> findStaleTasks(@Param("threshold") Instant threshold);
+    List<ScheduledTask> findStaleTasks(@Param("cutoff") Instant cutoff);
 
     /**
-     * Reset stale tasks to RETRY_PENDING status
+     * Reset stale tasks to RETRY_PENDING — only if their lock window is still
+     * expired by the grace cutoff at UPDATE time.
+     * <p>
+     * The {@code lockedUntil < :cutoff} predicate guards against the race where
+     * a concurrent executor revives the lock between the {@code findStaleTasks}
+     * read and this UPDATE: if the row was just re-locked by a live executor,
+     * its {@code lockedUntil} is now in the future and this UPDATE skips it.
      */
     @Modifying
     @Query("""
@@ -139,8 +149,15 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
                 t.scheduledTime = :nextRetryTime,
                 t.updatedAt = :now
             WHERE t.id IN :taskIds
+              AND t.status = 'PROCESSING'
+              AND t.lockedUntil IS NOT NULL
+              AND t.lockedUntil < :cutoff
             """)
-    int resetStaleTasks(@Param("taskIds") List<UUID> taskIds, @Param("nextRetryTime") Instant nextRetryTime, @Param("now") Instant now);
+    int resetStaleTasks(
+            @Param("taskIds") List<UUID> taskIds,
+            @Param("nextRetryTime") Instant nextRetryTime,
+            @Param("now") Instant now,
+            @Param("cutoff") Instant cutoff);
 
     /**
      * Find tasks by reference ID (e.g., order ID)
