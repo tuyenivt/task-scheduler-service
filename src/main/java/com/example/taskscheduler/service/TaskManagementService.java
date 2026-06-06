@@ -12,6 +12,7 @@ import com.example.taskscheduler.exception.InvalidTaskStateException;
 import com.example.taskscheduler.exception.TaskNotFoundException;
 import com.example.taskscheduler.mapper.TaskMapper;
 import com.example.taskscheduler.service.executor.TaskPollingService;
+import com.example.taskscheduler.service.handler.TaskHandlerRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -42,6 +43,7 @@ public class TaskManagementService {
     private final TaskExecutionLogRepository executionLogRepository;
     private final TaskPollingService taskPollingService;
     private final TaskMapper taskMapper;
+    private final TaskHandlerRegistry handlerRegistry;
 
     // === Task Creation ===
 
@@ -51,6 +53,12 @@ public class TaskManagementService {
     @Transactional
     public TaskResponse createTask(CreateTaskRequest request) {
         log.info("Creating task of type {} for reference {}", request.getTaskType(), request.getReferenceId());
+
+        // Per-handler validation runs before persistence so malformed payloads
+        // surface as HTTP 400 without writing a row, acquiring a lock, or
+        // burning a retry counter.
+        var handler = handlerRegistry.getHandlerOrThrow(request.getTaskType());
+        handler.validateForCreate(request);
 
         // Check for duplicate active task
         if (request.isPreventDuplicates()) {

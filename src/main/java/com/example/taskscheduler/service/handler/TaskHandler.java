@@ -2,6 +2,7 @@ package com.example.taskscheduler.service.handler;
 
 import com.example.taskscheduler.domain.entity.ScheduledTask;
 import com.example.taskscheduler.domain.enums.TaskType;
+import com.example.taskscheduler.dto.CreateTaskRequest;
 
 /**
  * Interface for task handlers.
@@ -35,6 +36,25 @@ public interface TaskHandler {
      */
     default boolean supports(TaskType taskType) {
         return getTaskType() == taskType;
+    }
+
+    /**
+     * Validate a creation request before persistence.
+     * <p>
+     * Runs synchronously inside the create transaction so handler-specific
+     * invariants (required payload keys, type coercions, business rules)
+     * can reject the request with HTTP 400 before a row is written. Catches
+     * malformed input that would otherwise only surface mid-execution —
+     * after lock acquisition, MDC setup, and an execution-log row have
+     * already been written.
+     *
+     * @param request the creation request
+     * @throws IllegalArgumentException if validation fails (mapped to 400)
+     */
+    default void validateForCreate(CreateTaskRequest request) {
+        if (request.getReferenceId() == null || request.getReferenceId().isBlank()) {
+            throw new IllegalArgumentException("Task reference ID is required");
+        }
     }
 
     /**

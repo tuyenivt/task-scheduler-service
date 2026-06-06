@@ -13,6 +13,8 @@ import com.example.taskscheduler.exception.InvalidTaskStateException;
 import com.example.taskscheduler.exception.TaskNotFoundException;
 import com.example.taskscheduler.mapper.TaskMapper;
 import com.example.taskscheduler.service.executor.TaskPollingService;
+import com.example.taskscheduler.service.handler.TaskHandler;
+import com.example.taskscheduler.service.handler.TaskHandlerRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -49,6 +51,12 @@ class TaskManagementServiceTest {
 
     @Mock
     private TaskMapper taskMapper;
+
+    @Mock
+    private TaskHandlerRegistry handlerRegistry;
+
+    @Mock
+    private TaskHandler taskHandler;
 
     @InjectMocks
     private TaskManagementService taskManagementService;
@@ -103,6 +111,7 @@ class TaskManagementServiceTest {
                     .preventDuplicates(false)
                     .build();
 
+            when(handlerRegistry.getHandlerOrThrow(TaskType.ORDER_CANCEL)).thenReturn(taskHandler);
             when(taskRepository.save(any(ScheduledTask.class))).thenReturn(testTask);
             when(taskMapper.toResponse(any(ScheduledTask.class))).thenReturn(testTaskResponse);
 
@@ -131,6 +140,7 @@ class TaskManagementServiceTest {
                     .preventDuplicates(true)
                     .build();
 
+            when(handlerRegistry.getHandlerOrThrow(TaskType.ORDER_CANCEL)).thenReturn(taskHandler);
             when(taskRepository.existsActiveTaskForReference("ORD-12345", TaskType.ORDER_CANCEL))
                     .thenReturn(true);
 
@@ -138,6 +148,28 @@ class TaskManagementServiceTest {
             assertThatThrownBy(() -> taskManagementService.createTask(request))
                     .isInstanceOf(DuplicateTaskException.class);
             verify(taskRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Should reject creation when handler validation throws")
+        void shouldRejectWhenHandlerValidationFails() {
+            // Given
+            CreateTaskRequest request = CreateTaskRequest.builder()
+                    .taskType(TaskType.ORDER_CANCEL)
+                    .referenceId("ORD-BAD")
+                    .preventDuplicates(false)
+                    .build();
+
+            when(handlerRegistry.getHandlerOrThrow(TaskType.ORDER_CANCEL)).thenReturn(taskHandler);
+            doThrow(new IllegalArgumentException("missing required payload key: reason"))
+                    .when(taskHandler).validateForCreate(request);
+
+            // When/Then
+            assertThatThrownBy(() -> taskManagementService.createTask(request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("missing required payload key");
+            verify(taskRepository, never()).save(any());
+            verify(taskRepository, never()).existsActiveTaskForReference(any(), any());
         }
 
         @Test
@@ -149,6 +181,7 @@ class TaskManagementServiceTest {
                     .referenceId("PAY-67890")
                     .build();
 
+            when(handlerRegistry.getHandlerOrThrow(TaskType.PAYMENT_REFUND)).thenReturn(taskHandler);
             when(taskRepository.save(any(ScheduledTask.class))).thenReturn(testTask);
             when(taskMapper.toResponse(any(ScheduledTask.class))).thenReturn(testTaskResponse);
 
