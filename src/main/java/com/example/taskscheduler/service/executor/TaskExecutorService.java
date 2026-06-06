@@ -15,7 +15,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.net.InetAddress;
@@ -49,6 +51,14 @@ public class TaskExecutorService {
     private final MetricsConfig metricsConfig;
     private final TaskSchedulerProperties properties;
 
+    /**
+     * Self-reference used for proxy-mediated transactional calls so that
+     * REQUIRES_NEW boundaries on emergency lock-release actually take effect
+     * (direct {@code this} calls would bypass the Spring AOP proxy).
+     */
+    @Lazy
+    private final TaskExecutorService self;
+
     @Value("${HOSTNAME:unknown}")
     private String hostname;
 
@@ -75,11 +85,16 @@ public class TaskExecutorService {
      * The caller must have already acquired the lock for this task via
      * {@link #acquireLockAndFetch(UUID)} — the returned entity is the
      * authoritative locked snapshot and is executed without further re-fetching.
+     * <p>
+     * If the inner transactional execution rolls back or throws (DB blip, pool
+     * timeout, save() failure inside the failure-handling path), this method
+     * issues an emergency lock release in a separate REQUIRES_NEW transaction so
+     * the row does not sit locked until its TTL expires. The task is rescheduled
+     * for immediate retry on a subsequent polling cycle.
      *
      * @param task The locked task to execute
      * @return true if execution was successful
      */
-    @Transactional
     public boolean executeTask(ScheduledTask task) {
         var taskId = task.getId().toString();
 
@@ -88,11 +103,49 @@ public class TaskExecutorService {
         MDC.put("referenceId", task.getReferenceId());
 
         try {
-            return doExecuteTask(task);
+            return self.executeTaskInTx(task);
+        } catch (RuntimeException e) {
+            log.error("Execution transaction failed for task {}; performing emergency lock release: {}",
+                    taskId, e.getMessage(), e);
+            try {
+                self.releaseLockAfterTxFailure(task.getId());
+            } catch (RuntimeException releaseEx) {
+                log.error("Emergency lock release failed for task {}; row will remain locked until TTL expires: {}",
+                        taskId, releaseEx.getMessage(), releaseEx);
+            }
+            return false;
         } finally {
             MDC.remove("taskId");
             MDC.remove("taskType");
             MDC.remove("referenceId");
+        }
+    }
+
+    /**
+     * Transactional inner boundary for task execution. Invoked via the proxy
+     * ({@code self}) so the @Transactional semantics actually apply when called
+     * from the same bean.
+     */
+    @Transactional
+    public boolean executeTaskInTx(ScheduledTask task) {
+        return doExecuteTask(task);
+    }
+
+    /**
+     * Release a lock held by this instance after the main execution transaction
+     * has rolled back. Runs in its own transaction so it commits independently
+     * of the failed outer work. No-op if the task is already in a terminal state
+     * or no longer locked by this instance.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void releaseLockAfterTxFailure(UUID taskId) {
+        var now = Instant.now();
+        var nextRetry = now.plusSeconds(60);
+        var rows = taskRepository.releaseLockForRetry(taskId, getInstanceId(), nextRetry, now);
+        if (rows == 1) {
+            log.warn("Emergency-released lock for task {}; scheduled for retry at {}", taskId, nextRetry);
+        } else {
+            log.debug("Emergency lock release for task {} was a no-op (already released or terminal)", taskId);
         }
     }
 

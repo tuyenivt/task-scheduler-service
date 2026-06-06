@@ -115,6 +115,33 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
             @Param("now") Instant now);
 
     /**
+     * Emergency lock release for a task whose normal execution path threw
+     * after the lock was acquired (and thus committed) in a prior transaction.
+     * <p>
+     * Only releases if this instance still owns the lock and the task is still
+     * in a non-terminal state. Schedules the task for immediate retry so it is
+     * picked up on the next polling cycle rather than waiting for the full
+     * lock TTL to expire.
+     */
+    @Modifying
+    @Query("""
+            UPDATE ScheduledTask t
+            SET t.lockedBy = NULL,
+                t.lockedUntil = NULL,
+                t.status = 'RETRY_PENDING',
+                t.scheduledTime = :nextRetryTime,
+                t.updatedAt = :now
+            WHERE t.id = :taskId
+              AND t.lockedBy = :instanceId
+              AND t.status NOT IN ('COMPLETED', 'CANCELLED', 'EXPIRED', 'MAX_RETRIES_EXCEEDED', 'DEAD_LETTER')
+            """)
+    int releaseLockForRetry(
+            @Param("taskId") UUID taskId,
+            @Param("instanceId") String instanceId,
+            @Param("nextRetryTime") Instant nextRetryTime,
+            @Param("now") Instant now);
+
+    /**
      * Find stale locked tasks whose lock window expired at least a grace period ago.
      * <p>
      * The caller passes {@code cutoff = now - grace}; rows with

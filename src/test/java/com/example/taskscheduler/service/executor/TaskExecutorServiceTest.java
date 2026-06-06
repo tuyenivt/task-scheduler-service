@@ -21,9 +21,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.Map;
@@ -56,7 +56,6 @@ class TaskExecutorServiceTest {
     @Mock
     private TaskSchedulerProperties properties;
 
-    @InjectMocks
     private TaskExecutorService taskExecutorService;
 
     @Captor
@@ -72,6 +71,18 @@ class TaskExecutorServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Construct manually so we can wire `self` to the real instance and
+        // exercise transactional boundaries (no Spring AOP proxy in unit tests).
+        taskExecutorService = new TaskExecutorService(
+                taskRepository,
+                executionLogRepository,
+                handlerRegistry,
+                slackAlertService,
+                metricsConfig,
+                properties,
+                null);
+        ReflectionTestUtils.setField(taskExecutorService, "self", taskExecutorService);
+
         // Trigger @PostConstruct manually since Mockito doesn't call it
         taskExecutorService.initInstanceId();
 
@@ -265,6 +276,33 @@ class TaskExecutorServiceTest {
             assertThat(result).isFalse();
             verify(metricsConfig).recordTaskExecution(eq(mockTimerSample), eq(TaskType.ORDER_CANCEL), eq(false));
             verify(metricsConfig).recordTaskFailure(eq(TaskType.ORDER_CANCEL), eq("RuntimeException"));
+        }
+
+        @Test
+        @DisplayName("Should emergency-release the lock when the failure-handling save also throws")
+        void shouldEmergencyReleaseLockWhenFailurePathThrows() {
+            // Given: the handler fails, then handleFailure's save() also throws,
+            // simulating a DB blip during the retry-scheduling write.
+            when(properties.getDefaultMaxRetries()).thenReturn(5);
+            when(properties.getDefaultRetryDelayHours()).thenReturn(24);
+            when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
+            when(executionLogRepository.save(any(TaskExecutionLog.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+            when(handlerRegistry.getHandlerOrThrow(TaskType.ORDER_CANCEL)).thenReturn(mockHandler);
+            when(mockHandler.execute(any())).thenReturn(
+                    TaskExecutionResult.failure("Service unavailable", "HTTP_503"));
+            when(mockHandler.calculateNextRetryDelayMs(any(), anyInt())).thenReturn(3600000L);
+            when(taskRepository.save(any(ScheduledTask.class)))
+                    .thenThrow(new RuntimeException("DB connection lost"));
+            when(taskRepository.releaseLockForRetry(eq(testTaskId), anyString(), any(), any()))
+                    .thenReturn(1);
+
+            // When
+            boolean result = taskExecutorService.executeTask(testTask);
+
+            // Then: emergency release was invoked exactly once
+            assertThat(result).isFalse();
+            verify(taskRepository).releaseLockForRetry(eq(testTaskId), anyString(), any(), any());
         }
     }
 
