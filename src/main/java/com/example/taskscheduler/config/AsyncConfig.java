@@ -79,7 +79,7 @@ public class AsyncConfig {
      * Backed by virtual threads but capped at {@code executorPoolSize} workers
      * with a bounded queue of {@code dispatchQueueCapacity}. When the queue is
      * full, {@code CallerRunsPolicy} forces the submitter (the polling thread)
-     * to run the task itself — this naturally throttles the polling loop until
+     * to run the task itself - this naturally throttles the polling loop until
      * dispatch capacity recovers, preventing unbounded VT accumulation that
      * would otherwise exhaust the Hikari connection pool when downstreams are
      * degraded.

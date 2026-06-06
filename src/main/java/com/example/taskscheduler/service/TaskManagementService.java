@@ -411,7 +411,7 @@ public class TaskManagementService {
     public TaskStatistics getStatistics() {
         var stats = new TaskStatistics();
 
-        // Status distribution — one grouped query feeds both the distribution
+        // Status distribution - one grouped query feeds both the distribution
         // map and the summary roll-ups, avoiding redundant countByStatus calls.
         var statusCounts = new HashMap<String, Long>();
         var byStatus = new EnumMap<TaskStatus, Long>(TaskStatus.class);

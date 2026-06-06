@@ -86,7 +86,7 @@ public class TaskExecutorService {
      * Execute a single task with full lifecycle management.
      * <p>
      * The caller must have already acquired the lock for this task via
-     * {@link #acquireLockAndFetch(UUID)} — the returned entity is the
+     * {@link #acquireLockAndFetch(UUID)} - the returned entity is the
      * authoritative locked snapshot and is executed without further re-fetching.
      * <p>
      * If the inner transactional execution rolls back or throws (DB blip, pool
@@ -218,7 +218,7 @@ public class TaskExecutorService {
      * <p>
      * The atomic UPDATE is the single source of truth for who owns the task; the
      * returned entity reflects the row state after the lock was won (re-read in
-     * the same transaction), so the caller does not need — and must not perform —
+     * the same transaction), so the caller does not need - and must not perform -
      * a separate re-fetch. This eliminates the race where a stale version captured
      * during polling would be revalidated by a separate read between lock acquire
      * and execution.
@@ -289,7 +289,7 @@ public class TaskExecutorService {
 
         taskRepository.save(task);
 
-        // Update execution log — the just-finished attempt is always COMPLETED here,
+        // Update execution log - the just-finished attempt is always COMPLETED here,
         // independent of whether the parent task is one-shot or recurring.
         executionLog.setStatus(TaskStatus.COMPLETED);
         executionLog.setCompletedAt(endTime);

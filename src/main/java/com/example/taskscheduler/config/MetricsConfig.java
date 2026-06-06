@@ -70,7 +70,7 @@ public class MetricsConfig {
      * Periodically update gauge metrics from the database.
      * <p>
      * A single grouped query populates every per-status gauge and the queue
-     * depth — collapsing what used to be one query per status (~12 calls per
+     * depth - collapsing what used to be one query per status (~12 calls per
      * tick) into one. Statuses absent from the result default to zero so
      * gauges decay correctly when a status empties out.
      */

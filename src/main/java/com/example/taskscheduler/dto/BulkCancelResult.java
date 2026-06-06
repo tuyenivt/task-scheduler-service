@@ -12,7 +12,7 @@ import java.util.UUID;
  * Result of a bulk-cancel operation with per-id outcome.
  * <p>
  * {@code succeeded} contains the IDs that are now in CANCELLED state (including
- * IDs that were already CANCELLED at request time — bulk cancel is idempotent
+ * IDs that were already CANCELLED at request time - bulk cancel is idempotent
  * so retrying the whole list is safe and does not produce spurious failures).
  * {@code failed} contains IDs that could not be cancelled, each with a reason
  * (not found, currently locked, already in a different terminal state).

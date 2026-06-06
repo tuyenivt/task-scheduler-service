@@ -44,7 +44,7 @@ public interface TaskHandler {
      * Runs synchronously inside the create transaction so handler-specific
      * invariants (required payload keys, type coercions, business rules)
      * can reject the request with HTTP 400 before a row is written. Catches
-     * malformed input that would otherwise only surface mid-execution —
+     * malformed input that would otherwise only surface mid-execution -
      * after lock acquisition, MDC setup, and an execution-log row have
      * already been written.
      *

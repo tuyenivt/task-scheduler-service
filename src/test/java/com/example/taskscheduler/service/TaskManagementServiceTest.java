@@ -383,7 +383,7 @@ class TaskManagementServiceTest {
         @DisplayName("Should split per-id outcome between succeeded and failed")
         void shouldReportPerIdOutcome() {
             // Given three IDs: one cancellable PENDING, one already CANCELLED
-            // (idempotent — counts as succeeded), one missing.
+            // (idempotent - counts as succeeded), one missing.
             UUID pendingId = UUID.randomUUID();
             UUID alreadyCancelledId = UUID.randomUUID();
             UUID missingId = UUID.randomUUID();

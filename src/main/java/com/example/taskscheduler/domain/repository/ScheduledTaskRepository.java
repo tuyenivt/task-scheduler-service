@@ -62,7 +62,7 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
      * Atomically acquire a lock on a task for processing.
      * <p>
      * The lock predicate (lockedBy IS NULL OR lockedUntil < now) is the single
-     * source of truth — at most one caller wins for a given (id, now). The caller
+     * source of truth - at most one caller wins for a given (id, now). The caller
      * should re-read the row via findById within the same transaction to obtain
      * the post-lock state, eliminating the poll/execute version race.
      *
@@ -158,7 +158,7 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
     List<ScheduledTask> findStaleTasks(@Param("cutoff") Instant cutoff);
 
     /**
-     * Reset stale tasks to RETRY_PENDING — only if their lock window is still
+     * Reset stale tasks to RETRY_PENDING - only if their lock window is still
      * expired by the grace cutoff at UPDATE time.
      * <p>
      * The {@code lockedUntil < :cutoff} predicate guards against the race where

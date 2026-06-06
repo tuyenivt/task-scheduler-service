@@ -64,7 +64,7 @@ task-scheduler:
   executor-pool-size: ${EXECUTOR_POOL_SIZE:20}
 
   # Bounded queue capacity for the dispatch executor. When full, the poller
-  # runs tasks itself (CallerRunsPolicy) — providing submit-time backpressure.
+  # runs tasks itself (CallerRunsPolicy) - providing submit-time backpressure.
   dispatch-queue-capacity: ${DISPATCH_QUEUE_CAPACITY:200}
 
   # Default retry configuration

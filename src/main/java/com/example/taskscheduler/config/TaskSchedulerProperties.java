@@ -72,7 +72,7 @@ public class TaskSchedulerProperties {
      * Threshold in minutes after which a locked task is considered stale.
      * <p>
      * Retained for backward compatibility but no longer drives the abandonment
-     * check directly — {@link #staleTaskGraceMinutes} is the authoritative knob.
+     * check directly - {@link #staleTaskGraceMinutes} is the authoritative knob.
      */
     @Min(1)
     private int staleTaskThresholdMinutes = 60;

@@ -166,7 +166,7 @@ class TaskExecutorServiceTest {
         @Test
         @DisplayName("Should complete recurring task when next fire is past expiresAt")
         void shouldCompleteRecurringTaskWhenExpired() {
-            // Given: daily cron with expiresAt set to "now + 60s" — execution proceeds
+            // Given: daily cron with expiresAt set to "now + 60s" - execution proceeds
             // (canExecute passes) but the next fire (next midnight UTC) is well past
             // expiresAt, so the executor falls through to COMPLETED rather than
             // SCHEDULED.

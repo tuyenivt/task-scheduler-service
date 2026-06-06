@@ -127,7 +127,7 @@ public class TaskPollingService {
                     )).toList();
 
             // Cap the per-cycle wait at roughly the poll interval. In-flight tasks
-            // are not abandoned on timeout — they continue running and hold their
+            // are not abandoned on timeout - they continue running and hold their
             // own DB-level locks; the isRunning CAS prevents the next cycle from
             // overlapping. The timeout exists only as a safety net to prevent the
             // poller thread itself from being pinned indefinitely.
