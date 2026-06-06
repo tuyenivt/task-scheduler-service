@@ -168,12 +168,16 @@ public class TaskController {
     // === Bulk Operations ===
 
     @PostMapping("/bulk/cancel")
-    @Operation(summary = "Cancel multiple tasks", description = "Cancel multiple tasks at once")
-    public ResponseEntity<ApiResponse<Integer>> cancelTasks(@Valid @RequestBody BulkTaskRequest request) {
+    @Operation(summary = "Cancel multiple tasks", description = "Cancel multiple tasks at once with per-id outcome")
+    public ResponseEntity<ApiResponse<BulkCancelResult>> cancelTasks(@Valid @RequestBody BulkTaskRequest request) {
         log.info("API: Bulk cancel {} tasks", request.getTaskIds().size());
 
-        var cancelled = taskManagementService.cancelTasks(request.getTaskIds(), request.getReason());
-        return ResponseEntity.ok(ApiResponse.success(cancelled, String.format("Cancelled %d tasks", cancelled)));
+        var result = taskManagementService.cancelTasks(request.getTaskIds(), request.getReason());
+        var message = String.format("Cancelled %d of %d tasks (%d failed)",
+                result.getSucceeded().size(),
+                result.getSucceeded().size() + result.getFailed().size(),
+                result.getFailed().size());
+        return ResponseEntity.ok(ApiResponse.success(result, message));
     }
 
     // === Statistics ===

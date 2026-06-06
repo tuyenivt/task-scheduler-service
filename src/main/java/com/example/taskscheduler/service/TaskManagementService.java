@@ -15,10 +15,12 @@ import com.example.taskscheduler.service.executor.TaskPollingService;
 import com.example.taskscheduler.service.handler.TaskHandlerRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -45,6 +47,14 @@ public class TaskManagementService {
     private final TaskPollingService taskPollingService;
     private final TaskMapper taskMapper;
     private final TaskHandlerRegistry handlerRegistry;
+
+    /**
+     * Self-reference for proxy-mediated transactional calls. Used by bulk
+     * operations that must run each per-id action in its own REQUIRES_NEW
+     * transaction so one failure does not roll back the rest.
+     */
+    @Lazy
+    private final TaskManagementService self;
 
     // === Task Creation ===
 
@@ -324,20 +334,64 @@ public class TaskManagementService {
     // === Bulk Operations ===
 
     /**
-     * Cancel multiple tasks
+     * Cancel multiple tasks, returning a per-id outcome.
+     * <p>
+     * Each per-id cancel runs in its own REQUIRES_NEW transaction so a single
+     * failure (terminal-state row, currently locked, not found) does not roll
+     * back the rest of the batch. Idempotent: an already-CANCELLED task is
+     * reported as succeeded so clients can safely retry the whole list.
      */
-    @Transactional
-    public int cancelTasks(List<UUID> taskIds, String reason) {
-        var cancelled = 0;
+    public BulkCancelResult cancelTasks(List<UUID> taskIds, String reason) {
+        var succeeded = new ArrayList<UUID>();
+        var failed = new ArrayList<BulkCancelResult.Failure>();
         for (var taskId : taskIds) {
             try {
-                cancelTask(taskId, reason);
-                cancelled++;
+                self.cancelOneIdempotent(taskId, reason);
+                succeeded.add(taskId);
+            } catch (TaskNotFoundException e) {
+                failed.add(BulkCancelResult.Failure.builder()
+                        .taskId(taskId).reason("not found").build());
+            } catch (InvalidTaskStateException e) {
+                failed.add(BulkCancelResult.Failure.builder()
+                        .taskId(taskId).reason(e.getMessage()).build());
             } catch (Exception e) {
-                log.warn("Failed to cancel task {}: {}", taskId, e.getMessage());
+                log.warn("Unexpected error cancelling task {}: {}", taskId, e.getMessage());
+                failed.add(BulkCancelResult.Failure.builder()
+                        .taskId(taskId).reason(e.getMessage()).build());
             }
         }
-        return cancelled;
+        return BulkCancelResult.builder().succeeded(succeeded).failed(failed).build();
+    }
+
+    /**
+     * Cancel a single task idempotently in its own transaction.
+     * <p>
+     * Re-cancelling an already-CANCELLED task is a no-op success (does not
+     * touch the row), supporting safe retry of bulk requests. Other terminal
+     * states still raise InvalidTaskStateException so the caller can see the
+     * actual reason the row could not transition to CANCELLED.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void cancelOneIdempotent(UUID taskId, String reason) {
+        var task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new TaskNotFoundException(taskId));
+
+        if (task.getStatus() == TaskStatus.CANCELLED) {
+            return;
+        }
+        if (task.getStatus().isTerminal()) {
+            throw new InvalidTaskStateException(
+                    taskId.toString(), task.getStatus().name(), TaskStatus.CANCELLED.name());
+        }
+        if (task.isLocked()) {
+            throw new InvalidTaskStateException(
+                    taskId.toString(), task.getStatus().name() + " (locked)", TaskStatus.CANCELLED.name());
+        }
+
+        task.setStatus(TaskStatus.CANCELLED);
+        task.setCompletedAt(Instant.now());
+        task.setLastError("Cancelled: " + (reason != null ? reason : "Manual cancellation"));
+        taskRepository.save(task);
     }
 
     /**

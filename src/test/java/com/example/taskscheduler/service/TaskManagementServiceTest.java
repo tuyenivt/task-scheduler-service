@@ -22,11 +22,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,7 +59,6 @@ class TaskManagementServiceTest {
     @Mock
     private TaskHandler taskHandler;
 
-    @InjectMocks
     private TaskManagementService taskManagementService;
 
     @Captor
@@ -70,6 +70,15 @@ class TaskManagementServiceTest {
 
     @BeforeEach
     void setUp() {
+        taskManagementService = new TaskManagementService(
+                taskRepository,
+                executionLogRepository,
+                taskPollingService,
+                taskMapper,
+                handlerRegistry,
+                null);
+        ReflectionTestUtils.setField(taskManagementService, "self", taskManagementService);
+
         testTaskId = UUID.randomUUID();
 
         testTask = ScheduledTask.builder()
@@ -363,6 +372,61 @@ class TaskManagementServiceTest {
 
             // Then
             assertThat(result).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("Bulk Cancel Tests")
+    class BulkCancelTests {
+
+        @Test
+        @DisplayName("Should split per-id outcome between succeeded and failed")
+        void shouldReportPerIdOutcome() {
+            // Given three IDs: one cancellable PENDING, one already CANCELLED
+            // (idempotent — counts as succeeded), one missing.
+            UUID pendingId = UUID.randomUUID();
+            UUID alreadyCancelledId = UUID.randomUUID();
+            UUID missingId = UUID.randomUUID();
+
+            var pending = ScheduledTask.builder()
+                    .id(pendingId).status(TaskStatus.PENDING)
+                    .taskType(TaskType.ORDER_CANCEL).referenceId("ORD-A").build();
+            var cancelled = ScheduledTask.builder()
+                    .id(alreadyCancelledId).status(TaskStatus.CANCELLED)
+                    .taskType(TaskType.ORDER_CANCEL).referenceId("ORD-B").build();
+
+            when(taskRepository.findById(pendingId)).thenReturn(Optional.of(pending));
+            when(taskRepository.findById(alreadyCancelledId)).thenReturn(Optional.of(cancelled));
+            when(taskRepository.findById(missingId)).thenReturn(Optional.empty());
+            when(taskRepository.save(any(ScheduledTask.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            // When
+            var result = taskManagementService.cancelTasks(
+                    List.of(pendingId, alreadyCancelledId, missingId), "test");
+
+            // Then
+            assertThat(result.getSucceeded()).containsExactlyInAnyOrder(pendingId, alreadyCancelledId);
+            assertThat(result.getFailed()).hasSize(1);
+            assertThat(result.getFailed().get(0).getTaskId()).isEqualTo(missingId);
+            assertThat(result.getFailed().get(0).getReason()).isEqualTo("not found");
+        }
+
+        @Test
+        @DisplayName("Should report invalid-state failure for terminal non-CANCELLED tasks")
+        void shouldReportInvalidStateFailureForTerminal() {
+            UUID completedId = UUID.randomUUID();
+            var completed = ScheduledTask.builder()
+                    .id(completedId).status(TaskStatus.COMPLETED)
+                    .taskType(TaskType.ORDER_CANCEL).referenceId("ORD-C").build();
+            when(taskRepository.findById(completedId)).thenReturn(Optional.of(completed));
+
+            // When
+            var result = taskManagementService.cancelTasks(List.of(completedId), "test");
+
+            // Then
+            assertThat(result.getSucceeded()).isEmpty();
+            assertThat(result.getFailed()).hasSize(1);
+            assertThat(result.getFailed().get(0).getTaskId()).isEqualTo(completedId);
         }
     }
 }
