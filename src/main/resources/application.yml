@@ -118,6 +118,18 @@ resilience4j:
         wait-duration-in-open-state: 30s
         permitted-number-of-calls-in-half-open-state: 3
         automatic-transition-from-open-to-half-open-enabled: true
+      slackAlerts:
+        # Trip on a few consecutive failures so a transient hiccup does not
+        # disable the alert path, but a genuinely degraded webhook stops eating
+        # async workers. Wait a minute before probing in half-open.
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
 
   retry:
     instances:
@@ -133,6 +145,16 @@ resilience4j:
         wait-duration: 2s
         exponential-backoff-multiplier: 2
         retry-exceptions:
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+      slackAlerts:
+        # Two retries with backoff keeps the per-alert blast radius bounded
+        # while smoothing over the most common transient network blips.
+        max-attempts: 3
+        wait-duration: 1s
+        exponential-backoff-multiplier: 2
+        retry-exceptions:
+          - com.example.taskscheduler.service.alert.SlackAlertService$SlackDeliveryException
           - java.net.ConnectException
           - java.net.SocketTimeoutException
 
