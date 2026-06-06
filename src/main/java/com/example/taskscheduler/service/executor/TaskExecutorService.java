@@ -22,6 +22,7 @@ import java.net.InetAddress;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -70,8 +71,12 @@ public class TaskExecutorService {
 
     /**
      * Execute a single task with full lifecycle management.
+     * <p>
+     * The caller must have already acquired the lock for this task via
+     * {@link #acquireLockAndFetch(UUID)} — the returned entity is the
+     * authoritative locked snapshot and is executed without further re-fetching.
      *
-     * @param task The task to execute
+     * @param task The locked task to execute
      * @return true if execution was successful
      */
     @Transactional
@@ -93,14 +98,6 @@ public class TaskExecutorService {
 
     private boolean doExecuteTask(ScheduledTask task) {
         var taskId = task.getId().toString();
-
-        // Re-fetch task within this transaction to get current state after lock acquisition
-        var freshTask = taskRepository.findById(task.getId()).orElse(null);
-        if (freshTask == null) {
-            log.warn("Task {} no longer exists", taskId);
-            return false;
-        }
-        task = freshTask;
 
         log.info("Starting execution of task {} (type: {}, reference: {})", taskId, task.getTaskType(), task.getReferenceId());
 
@@ -161,22 +158,37 @@ public class TaskExecutorService {
     }
 
     /**
-     * Acquire lock on a task before execution
+     * Atomically acquire the per-task lock and return the post-lock snapshot.
+     * <p>
+     * The atomic UPDATE is the single source of truth for who owns the task; the
+     * returned entity reflects the row state after the lock was won (re-read in
+     * the same transaction), so the caller does not need — and must not perform —
+     * a separate re-fetch. This eliminates the race where a stale version captured
+     * during polling would be revalidated by a separate read between lock acquire
+     * and execution.
+     *
+     * @return the locked task if the lock was won; empty otherwise
      */
     @Transactional
-    public boolean acquireLock(ScheduledTask task) {
+    public Optional<ScheduledTask> acquireLockAndFetch(UUID taskId) {
         var now = Instant.now();
         var lockUntil = now.plusSeconds(properties.getLockDurationMinutes() * 60L);
 
-        var updated = taskRepository.acquireTaskLock(task.getId(), getInstanceId(), lockUntil, task.getVersion(), now);
+        var updated = taskRepository.acquireTaskLock(taskId, getInstanceId(), lockUntil, now);
 
-        if (updated == 1) {
-            log.debug("Acquired lock for task {} until {}", task.getId(), lockUntil);
-            return true;
-        } else {
-            log.debug("Failed to acquire lock for task {} (already locked or version mismatch)", task.getId());
-            return false;
+        if (updated != 1) {
+            log.debug("Failed to acquire lock for task {} (already locked by another instance)", taskId);
+            return Optional.empty();
         }
+
+        var locked = taskRepository.findById(taskId);
+        if (locked.isEmpty()) {
+            log.warn("Task {} was locked but disappeared before re-read", taskId);
+            return Optional.empty();
+        }
+
+        log.debug("Acquired lock for task {} until {}", taskId, lockUntil);
+        return locked;
     }
 
     private boolean canExecute(ScheduledTask task) {

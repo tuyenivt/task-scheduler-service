@@ -53,7 +53,7 @@ A high-volume, distributed task scheduler service for back-office operations bui
 2. **Set up PostgreSQL:**
     ```bash
     # Using Docker
-    docker run -d --name taskscheduler-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=taskscheduler -p 5432:5432 postgres:18.1-alpine
+    docker run -d --name taskscheduler-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=taskscheduler -p 5432:5432 postgres:18.3-alpine
     ```
 
 3. **Run the application:**

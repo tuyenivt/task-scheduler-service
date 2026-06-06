@@ -136,20 +136,23 @@ public class TaskPollingService {
     }
 
     /**
-     * Process a single task - acquire lock and execute.
+     * Process a single task - acquire lock and execute the locked snapshot.
+     * <p>
+     * The polled task carries only an ID hint; the authoritative state is
+     * whatever {@code acquireLockAndFetch} returns under the atomic UPDATE,
+     * so we never execute against the stale poll-time snapshot.
      */
     private boolean processTask(ScheduledTask task) {
         var taskId = task.getId();
 
         try {
-            // Try to acquire lock
-            if (!taskExecutorService.acquireLock(task)) {
+            var locked = taskExecutorService.acquireLockAndFetch(taskId);
+            if (locked.isEmpty()) {
                 log.debug("Failed to acquire lock for task {}, skipping", taskId);
                 return false;
             }
 
-            // Execute task
-            return taskExecutorService.executeTask(task);
+            return taskExecutorService.executeTask(locked.get());
         } catch (Exception e) {
             log.error("Error processing task {}: {}", taskId, e.getMessage(), e);
             return false;

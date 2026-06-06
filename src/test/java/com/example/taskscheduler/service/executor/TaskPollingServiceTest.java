@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -70,7 +71,8 @@ class TaskPollingServiceTest {
             when(properties.getLockDurationMinutes()).thenReturn(30);
             when(taskRepository.findTasksForExecution(any(Instant.class), eq(100)))
                     .thenReturn(List.of(testTask));
-            when(taskExecutorService.acquireLock(any())).thenReturn(true);
+            when(taskExecutorService.acquireLockAndFetch(eq(testTask.getId())))
+                    .thenReturn(Optional.of(testTask));
             when(taskExecutorService.executeTask(any())).thenReturn(true);
 
             // When
@@ -79,7 +81,7 @@ class TaskPollingServiceTest {
             // Then - allow async execution to complete
             verify(taskRepository).findTasksForExecution(any(Instant.class), eq(100));
             // The task should be submitted to executor - verify with timeout for async
-            verify(taskExecutorService, timeout(5000)).acquireLock(any());
+            verify(taskExecutorService, timeout(5000)).acquireLockAndFetch(eq(testTask.getId()));
         }
 
         @Test
@@ -94,7 +96,7 @@ class TaskPollingServiceTest {
             taskPollingService.pollAndProcessTasks();
 
             // Then
-            verify(taskExecutorService, never()).acquireLock(any());
+            verify(taskExecutorService, never()).acquireLockAndFetch(any());
             verify(taskExecutorService, never()).executeTask(any());
         }
 
@@ -106,13 +108,14 @@ class TaskPollingServiceTest {
             when(properties.getLockDurationMinutes()).thenReturn(30);
             when(taskRepository.findTasksForExecution(any(Instant.class), eq(100)))
                     .thenReturn(List.of(testTask));
-            when(taskExecutorService.acquireLock(any())).thenReturn(false);
+            when(taskExecutorService.acquireLockAndFetch(eq(testTask.getId())))
+                    .thenReturn(Optional.empty());
 
             // When
             taskPollingService.pollAndProcessTasks();
 
             // Then
-            verify(taskExecutorService, timeout(5000)).acquireLock(any());
+            verify(taskExecutorService, timeout(5000)).acquireLockAndFetch(eq(testTask.getId()));
             verify(taskExecutorService, never()).executeTask(any());
         }
     }

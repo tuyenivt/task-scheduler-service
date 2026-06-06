@@ -102,7 +102,6 @@ class TaskExecutorServiceTest {
         @DisplayName("Should execute task successfully")
         void shouldExecuteTaskSuccessfully() {
             // Given
-            when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
             when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
             when(executionLogRepository.save(any(TaskExecutionLog.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
@@ -132,7 +131,6 @@ class TaskExecutorServiceTest {
             // Given
             when(properties.getDefaultMaxRetries()).thenReturn(5);
             when(properties.getDefaultRetryDelayHours()).thenReturn(24);
-            when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
             when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
             when(executionLogRepository.save(any(TaskExecutionLog.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
@@ -159,7 +157,6 @@ class TaskExecutorServiceTest {
         @DisplayName("Should handle permanent failure (non-retryable)")
         void shouldHandlePermanentFailure() {
             // Given
-            when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
             when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
             when(executionLogRepository.save(any(TaskExecutionLog.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
@@ -186,7 +183,6 @@ class TaskExecutorServiceTest {
             // Given
             testTask.setRetryCount(4); // Already retried 4 times
             when(properties.getDefaultMaxRetries()).thenReturn(5);
-            when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
             when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
             when(executionLogRepository.save(any(TaskExecutionLog.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
@@ -212,7 +208,6 @@ class TaskExecutorServiceTest {
         void shouldMarkExpiredTask() {
             // Given
             testTask.setExpiresAt(Instant.now().minusSeconds(3600)); // expired 1 hour ago
-            when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
             when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
             when(executionLogRepository.save(any(TaskExecutionLog.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
@@ -228,24 +223,9 @@ class TaskExecutorServiceTest {
         }
 
         @Test
-        @DisplayName("Should return false when task no longer exists")
-        void shouldReturnFalseWhenTaskNotFound() {
-            // Given
-            when(taskRepository.findById(testTaskId)).thenReturn(Optional.empty());
-
-            // When
-            boolean result = taskExecutorService.executeTask(testTask);
-
-            // Then
-            assertThat(result).isFalse();
-            verify(handlerRegistry, never()).getHandlerOrThrow(any());
-        }
-
-        @Test
         @DisplayName("Should handle validation failure")
         void shouldHandleValidationFailure() {
             // Given
-            when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
             when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
             when(executionLogRepository.save(any(TaskExecutionLog.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
@@ -270,7 +250,6 @@ class TaskExecutorServiceTest {
             // Given
             when(properties.getDefaultMaxRetries()).thenReturn(5);
             when(properties.getDefaultRetryDelayHours()).thenReturn(24);
-            when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
             when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
             when(executionLogRepository.save(any(TaskExecutionLog.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
@@ -290,37 +269,55 @@ class TaskExecutorServiceTest {
     }
 
     @Nested
-    @DisplayName("acquireLock Tests")
-    class AcquireLockTests {
+    @DisplayName("acquireLockAndFetch Tests")
+    class AcquireLockAndFetchTests {
 
         @Test
-        @DisplayName("Should acquire lock successfully")
+        @DisplayName("Should acquire lock and return post-lock snapshot")
         void shouldAcquireLockSuccessfully() {
             // Given
             when(properties.getLockDurationMinutes()).thenReturn(30);
-            when(taskRepository.acquireTaskLock(eq(testTaskId), anyString(), any(), eq(1L), any()))
+            when(taskRepository.acquireTaskLock(eq(testTaskId), anyString(), any(), any()))
                     .thenReturn(1);
+            when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
 
             // When
-            boolean result = taskExecutorService.acquireLock(testTask);
+            Optional<ScheduledTask> result = taskExecutorService.acquireLockAndFetch(testTaskId);
 
             // Then
-            assertThat(result).isTrue();
+            assertThat(result).contains(testTask);
         }
 
         @Test
-        @DisplayName("Should fail to acquire lock when already locked")
+        @DisplayName("Should return empty when atomic UPDATE updates zero rows")
         void shouldFailToAcquireLockWhenAlreadyLocked() {
             // Given
             when(properties.getLockDurationMinutes()).thenReturn(30);
-            when(taskRepository.acquireTaskLock(eq(testTaskId), anyString(), any(), eq(1L), any()))
+            when(taskRepository.acquireTaskLock(eq(testTaskId), anyString(), any(), any()))
                     .thenReturn(0);
 
             // When
-            boolean result = taskExecutorService.acquireLock(testTask);
+            Optional<ScheduledTask> result = taskExecutorService.acquireLockAndFetch(testTaskId);
 
             // Then
-            assertThat(result).isFalse();
+            assertThat(result).isEmpty();
+            verify(taskRepository, never()).findById(any());
+        }
+
+        @Test
+        @DisplayName("Should return empty when lock won but row disappeared before re-read")
+        void shouldReturnEmptyWhenRowDisappearsAfterLock() {
+            // Given
+            when(properties.getLockDurationMinutes()).thenReturn(30);
+            when(taskRepository.acquireTaskLock(eq(testTaskId), anyString(), any(), any()))
+                    .thenReturn(1);
+            when(taskRepository.findById(testTaskId)).thenReturn(Optional.empty());
+
+            // When
+            Optional<ScheduledTask> result = taskExecutorService.acquireLockAndFetch(testTaskId);
+
+            // Then
+            assertThat(result).isEmpty();
         }
     }
 }

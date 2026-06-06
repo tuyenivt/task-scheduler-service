@@ -59,10 +59,14 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
     List<ScheduledTask> findTasksForExecution(@Param("now") Instant now, @Param("limit") int limit);
 
     /**
-     * Acquire a lock on a task for processing.
-     * Uses optimistic locking via version field.
+     * Atomically acquire a lock on a task for processing.
+     * <p>
+     * The lock predicate (lockedBy IS NULL OR lockedUntil < now) is the single
+     * source of truth — at most one caller wins for a given (id, now). The caller
+     * should re-read the row via findById within the same transaction to obtain
+     * the post-lock state, eliminating the poll/execute version race.
      *
-     * @return number of rows updated (1 if successful, 0 if already locked)
+     * @return number of rows updated (1 if lock won, 0 otherwise)
      */
     @Modifying
     @Query("""
@@ -73,14 +77,12 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
                 t.startedAt = :now,
                 t.updatedAt = :now
             WHERE t.id = :taskId
-              AND t.version = :version
               AND (t.lockedBy IS NULL OR t.lockedUntil < :now)
             """)
     int acquireTaskLock(
             @Param("taskId") UUID taskId,
             @Param("instanceId") String instanceId,
             @Param("lockUntil") Instant lockUntil,
-            @Param("version") Long version,
             @Param("now") Instant now);
 
     /**
