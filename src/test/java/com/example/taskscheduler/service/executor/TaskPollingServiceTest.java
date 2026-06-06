@@ -6,6 +6,7 @@ import com.example.taskscheduler.domain.enums.TaskPriority;
 import com.example.taskscheduler.domain.enums.TaskStatus;
 import com.example.taskscheduler.domain.enums.TaskType;
 import com.example.taskscheduler.domain.repository.ScheduledTaskRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -45,7 +46,8 @@ class TaskPollingServiceTest {
     void setUp() {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         taskPollingService = new TaskPollingService(
-                taskRepository, taskExecutorService, properties, executor);
+                taskRepository, taskExecutorService, properties, executor, new SimpleMeterRegistry());
+        taskPollingService.registerGauges();
 
         testTask = ScheduledTask.builder()
                 .id(UUID.randomUUID())
@@ -68,7 +70,7 @@ class TaskPollingServiceTest {
         void shouldPollAndDispatchTasks() {
             // Given
             when(properties.getBatchSize()).thenReturn(100);
-            when(properties.getLockDurationMinutes()).thenReturn(30);
+            when(properties.getPollIntervalMs()).thenReturn(30_000L);
             when(taskRepository.findTasksForExecution(any(Instant.class), eq(100)))
                     .thenReturn(List.of(testTask));
             when(taskExecutorService.acquireLockAndFetch(eq(testTask.getId())))
@@ -105,7 +107,7 @@ class TaskPollingServiceTest {
         void shouldSkipTaskWhenLockFails() {
             // Given
             when(properties.getBatchSize()).thenReturn(100);
-            when(properties.getLockDurationMinutes()).thenReturn(30);
+            when(properties.getPollIntervalMs()).thenReturn(30_000L);
             when(taskRepository.findTasksForExecution(any(Instant.class), eq(100)))
                     .thenReturn(List.of(testTask));
             when(taskExecutorService.acquireLockAndFetch(eq(testTask.getId())))

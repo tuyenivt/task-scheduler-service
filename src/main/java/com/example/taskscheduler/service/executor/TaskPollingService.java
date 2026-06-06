@@ -3,6 +3,9 @@ package com.example.taskscheduler.service.executor;
 import com.example.taskscheduler.config.TaskSchedulerProperties;
 import com.example.taskscheduler.domain.entity.ScheduledTask;
 import com.example.taskscheduler.domain.repository.ScheduledTaskRepository;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -16,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Service responsible for polling pending tasks and dispatching them for execution.
@@ -36,17 +40,30 @@ public class TaskPollingService {
     private final ScheduledTaskRepository taskRepository;
     private final TaskExecutorService taskExecutorService;
     private final TaskSchedulerProperties properties;
-    private final ExecutorService virtualThreadExecutor;
+    private final ExecutorService dispatchExecutor;
+    private final MeterRegistry meterRegistry;
 
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
+    private final AtomicInteger inFlightTasks = new AtomicInteger(0);
 
-    public TaskPollingService(ScheduledTaskRepository taskRepository, TaskExecutorService taskExecutorService, TaskSchedulerProperties properties,
-                              @Qualifier("virtualThreadExecutor") ExecutorService virtualThreadExecutor) {
+    public TaskPollingService(ScheduledTaskRepository taskRepository,
+                              TaskExecutorService taskExecutorService,
+                              TaskSchedulerProperties properties,
+                              @Qualifier("boundedVirtualThreadExecutor") ExecutorService dispatchExecutor,
+                              MeterRegistry meterRegistry) {
         this.taskRepository = taskRepository;
         this.taskExecutorService = taskExecutorService;
         this.properties = properties;
-        this.virtualThreadExecutor = virtualThreadExecutor;
+        this.dispatchExecutor = dispatchExecutor;
+        this.meterRegistry = meterRegistry;
+    }
+
+    @PostConstruct
+    void registerGauges() {
+        Gauge.builder("task_scheduler_dispatch_in_flight", inFlightTasks, AtomicInteger::get)
+                .description("Tasks currently being dispatched/executed by the polling pipeline")
+                .register(meterRegistry);
     }
 
     /**
@@ -60,15 +77,15 @@ public class TaskPollingService {
     void shutdown() {
         log.info("Shutting down task polling service, waiting for in-flight tasks...");
         shuttingDown.set(true);
-        virtualThreadExecutor.shutdown();
+        dispatchExecutor.shutdown();
         try {
-            if (!virtualThreadExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
-                log.warn("Forced shutdown of virtual thread executor after 30s timeout");
-                virtualThreadExecutor.shutdownNow();
+            if (!dispatchExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                log.warn("Forced shutdown of dispatch executor after 30s timeout");
+                dispatchExecutor.shutdownNow();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            virtualThreadExecutor.shutdownNow();
+            dispatchExecutor.shutdownNow();
         }
         log.info("Task polling service shut down");
     }
@@ -100,23 +117,31 @@ public class TaskPollingService {
 
             log.info("Found {} tasks ready for execution", tasks.size());
 
-            // Dispatch tasks to virtual thread executor
+            // Dispatch tasks via the bounded executor. When the queue is full,
+            // CallerRunsPolicy forces this thread to run the task synchronously,
+            // which naturally throttles the polling loop.
             var futures = tasks.stream()
                     .map(task -> CompletableFuture.supplyAsync(
-                            () -> processTask(task),
-                            virtualThreadExecutor
+                            () -> processTaskTracked(task),
+                            dispatchExecutor
                     )).toList();
 
-            // Wait for all tasks to complete (with timeout)
+            // Cap the per-cycle wait at roughly the poll interval. In-flight tasks
+            // are not abandoned on timeout — they continue running and hold their
+            // own DB-level locks; the isRunning CAS prevents the next cycle from
+            // overlapping. The timeout exists only as a safety net to prevent the
+            // poller thread itself from being pinned indefinitely.
+            var pollWaitMs = Math.max(properties.getPollIntervalMs() * 2, 5_000L);
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                    .orTimeout(properties.getLockDurationMinutes(), java.util.concurrent.TimeUnit.MINUTES)
+                    .orTimeout(pollWaitMs, TimeUnit.MILLISECONDS)
                     .exceptionally(ex -> {
-                        log.error("Error waiting for task completion: {}", ex.getMessage());
+                        log.warn("Poll cycle wait exceeded {}ms; {} task(s) still in flight will continue asynchronously",
+                                pollWaitMs, inFlightTasks.get());
                         return null;
                     })
                     .join();
 
-            // Count successes
+            // Count successes for futures that completed within the wait window
             var successCount = futures.stream()
                     .filter(f -> {
                         try {
@@ -132,6 +157,18 @@ public class TaskPollingService {
             log.error("Error in task polling cycle: {}", e.getMessage(), e);
         } finally {
             isRunning.set(false);
+        }
+    }
+
+    /**
+     * Wraps {@link #processTask} with in-flight tracking for backpressure metrics.
+     */
+    private boolean processTaskTracked(ScheduledTask task) {
+        inFlightTasks.incrementAndGet();
+        try {
+            return processTask(task);
+        } finally {
+            inFlightTasks.decrementAndGet();
         }
     }
 
@@ -209,12 +246,15 @@ public class TaskPollingService {
     }
 
     /**
-     * Process a specific task immediately (for manual triggers)
+     * Process a specific task immediately (for manual triggers).
+     * <p>
+     * Runs through the same bounded dispatch executor as the polling loop so a
+     * manual retry storm can't bypass backpressure.
      */
     public CompletableFuture<Boolean> processTaskAsync(UUID taskId) {
         return CompletableFuture.supplyAsync(() -> {
             var task = taskRepository.findById(taskId).orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-            return processTask(task);
-        }, virtualThreadExecutor);
+            return processTaskTracked(task);
+        }, dispatchExecutor);
     }
 }

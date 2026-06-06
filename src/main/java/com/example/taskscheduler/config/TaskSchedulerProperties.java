@@ -35,6 +35,17 @@ public class TaskSchedulerProperties {
     private int executorPoolSize = 20;
 
     /**
+     * Bounded queue capacity for the dispatch executor.
+     * <p>
+     * When the queue is full, the polling thread runs tasks itself
+     * (CallerRunsPolicy), naturally throttling further dispatch. Should be
+     * roughly {@code batchSize * 2} so a single poll batch can be queued
+     * without immediate backpressure under normal load.
+     */
+    @Min(1)
+    private int dispatchQueueCapacity = 200;
+
+    /**
      * Default maximum retry attempts
      */
     @Min(0)
