@@ -177,6 +177,26 @@ management:
     export:
       prometheus:
         enabled: true
+  # Distributed tracing via Micrometer -> OTel bridge -> OTLP exporter.
+  # Defaults assume a local Jaeger or Tempo on http://localhost:4318
+  # (docker run -p 4318:4318 -p 16686:16686 jaegertracing/all-in-one:latest).
+  # In production, raise sampling.probability cautiously - 1.0 = trace everything.
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
+    propagation:
+      type: W3C
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+  observations:
+    http:
+      client:
+        requests:
+          name: http.client.requests
+      server:
+        requests:
+          name: http.server.requests
 
 logging:
   level:
@@ -185,7 +205,9 @@ logging:
     org.springframework.transaction: INFO
     org.hibernate.SQL: ${HIBERNATE_SQL_LOG:WARN}
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [taskId=%X{taskId} taskType=%X{taskType} ref=%X{referenceId}] - %msg%n"
+    # trace_id/span_id are added by Micrometer Tracing so log lines can be
+    # correlated to spans in Jaeger/Tempo.
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} [taskId=%X{taskId} taskType=%X{taskType} ref=%X{referenceId}] - %msg%n"
 
 springdoc:
   api-docs:
