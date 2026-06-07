@@ -82,6 +82,14 @@ task-scheduler:
   # is almost certainly gone before the cleanup job resets the row.
   stale-task-grace-minutes: ${STALE_TASK_GRACE_MINUTES:5}
 
+  # Retention windows for terminal task rows and execution logs. The retention
+  # job runs daily by default; override the cron via task-scheduler.retention-cron.
+  # execution-log-retention-days is floored to retention-days at runtime so logs
+  # do not disappear ahead of their parent task.
+  retention-days: ${RETENTION_DAYS:30}
+  execution-log-retention-days: ${EXECUTION_LOG_RETENTION_DAYS:30}
+  retention-cron: ${RETENTION_CRON:0 0 3 * * *}
+
 external-services:
   order-service:
     base-url: ${ORDER_SERVICE_URL:http://order-service:8080}

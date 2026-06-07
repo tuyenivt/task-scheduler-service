@@ -89,4 +89,23 @@ public class TaskSchedulerProperties {
      */
     @Min(1)
     private int staleTaskGraceMinutes = 5;
+
+    /**
+     * Retention (in days) for terminal-state rows in {@code scheduled_tasks}.
+     * Rows older than this whose status is COMPLETED, CANCELLED, or EXPIRED are
+     * eligible for deletion by the retention job. Indefinite growth degrades
+     * polling-query plans and bloats the GIN indexes on {@code payload} and
+     * {@code metadata}.
+     */
+    @Min(1)
+    private int retentionDays = 30;
+
+    /**
+     * Retention (in days) for {@code task_execution_logs} rows. Should be
+     * <em>at least</em> {@link #retentionDays} so logs are not orphaned ahead
+     * of their parent task; the retention job enforces this lower bound at
+     * runtime.
+     */
+    @Min(1)
+    private int executionLogRetentionDays = 30;
 }
