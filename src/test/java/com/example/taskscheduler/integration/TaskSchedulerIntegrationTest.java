@@ -284,7 +284,10 @@ class TaskSchedulerIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(bulkRequest)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data").value(2));
+                    // Bulk cancel now returns BulkCancelResult { succeeded, failed }
+                    // instead of an opaque count. Both ids were PENDING so both succeed.
+                    .andExpect(jsonPath("$.data.succeeded.length()").value(2))
+                    .andExpect(jsonPath("$.data.failed.length()").value(0));
         }
     }
 
