@@ -1,0 +1,57 @@
+# Local development stack: postgres + the app + Jaeger (OTLP receiver + UI).
+# Bring everything up with: docker compose up --build
+#   - App:    http://localhost:8080
+#   - Prom:   http://localhost:8080/actuator/prometheus
+#   - Jaeger: http://localhost:16686
+#
+# Mock order/payment services are intentionally omitted; configure
+# ORDER_SERVICE_URL / PAYMENT_SERVICE_URL to point at real or stub endpoints.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: taskscheduler
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d taskscheduler"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # UI
+      - "4318:4318"    # OTLP HTTP
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: taskscheduler
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+      TRACING_SAMPLING_PROBABILITY: "1.0"
+      LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres-data:
