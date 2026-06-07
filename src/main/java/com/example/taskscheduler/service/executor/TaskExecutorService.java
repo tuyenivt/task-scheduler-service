@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -128,8 +129,18 @@ public class TaskExecutorService {
      * Transactional inner boundary for task execution. Invoked via the proxy
      * ({@code self}) so the @Transactional semantics actually apply when called
      * from the same bean.
+     * <p>
+     * Propagation is REQUIRED: this method is always called outside any caller
+     * Tx (the polling dispatcher is non-transactional and runs each task on a
+     * fresh virtual thread), so a new Tx is started here and committed on
+     * return. Isolation is pinned to READ_COMMITTED - the same as the
+     * PostgreSQL default - so the choice is explicit rather than environment-
+     * dependent. Higher isolation would only produce spurious serialization
+     * failures: row contention is already prevented by the lock-row UPDATE in
+     * {@link #acquireLockAndFetch(UUID)}, and post-execution {@code save()}s
+     * are guarded by JPA optimistic locking via {@code @Version}.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
     public boolean executeTaskInTx(ScheduledTask task) {
         return doExecuteTask(task);
     }
@@ -140,7 +151,7 @@ public class TaskExecutorService {
      * of the failed outer work. No-op if the task is already in a terminal state
      * or no longer locked by this instance.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public void releaseLockAfterTxFailure(UUID taskId) {
         var now = Instant.now();
         var nextRetry = now.plusSeconds(60);
@@ -222,10 +233,19 @@ public class TaskExecutorService {
      * a separate re-fetch. This eliminates the race where a stale version captured
      * during polling would be revalidated by a separate read between lock acquire
      * and execution.
+     * <p>
+     * Propagation is REQUIRES_NEW so the lock-acquire UPDATE always commits
+     * before the executor's transaction begins, regardless of caller context.
+     * If a future caller wrapped this in an outer Tx by accident, plain
+     * REQUIRED would defer the lock commit until the outer Tx ended - other
+     * instances would not see the lock and could double-execute the task.
+     * Isolation is pinned to READ_COMMITTED to make the choice explicit; the
+     * atomic conditional UPDATE in {@code acquireTaskLock} is the only
+     * coordination point and is safe at this level.
      *
      * @return the locked task if the lock was won; empty otherwise
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public Optional<ScheduledTask> acquireLockAndFetch(UUID taskId) {
         var now = Instant.now();
         var lockUntil = now.plusSeconds(properties.getLockDurationMinutes() * 60L);
