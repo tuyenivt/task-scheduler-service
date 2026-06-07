@@ -34,6 +34,11 @@ jobs:
           # Cache Gradle dependencies and configuration cache between runs.
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      # The gradlew script is stored in git without the executable bit on
+      # Windows checkouts; restore it so the runner can invoke it directly.
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
       # Testcontainers integration tests use the Docker engine available on the
       # GitHub-hosted runner; no separate service container needed.
       - name: Run unit and integration tests
