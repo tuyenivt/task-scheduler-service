@@ -46,19 +46,23 @@ class TaskExecutionResultTest {
     }
 
     @Test
-    @DisplayName("Should create HTTP failure - 5xx is retryable")
+    @DisplayName("Should create HTTP failure - 5xx is retryable and bucketed as HTTP_5XX")
     void shouldCreateRetryableHttpFailure() {
         var result = TaskExecutionResult.httpFailure(503, "Service Unavailable");
         assertThat(result.isRetryable()).isTrue();
+        // Exact status preserved on httpStatusCode; errorType is the low-cardinality
+        // bucket used as the task_scheduler_failures metric tag.
         assertThat(result.getHttpStatusCode()).isEqualTo(503);
-        assertThat(result.getErrorType()).isEqualTo("HTTP_503");
+        assertThat(result.getErrorType()).isEqualTo("HTTP_5XX");
     }
 
     @Test
-    @DisplayName("Should create HTTP failure - 4xx is not retryable")
+    @DisplayName("Should create HTTP failure - 4xx is not retryable and bucketed as HTTP_4XX")
     void shouldCreateNonRetryableHttpFailure() {
         var result = TaskExecutionResult.httpFailure(400, "Bad Request");
         assertThat(result.isRetryable()).isFalse();
+        assertThat(result.getHttpStatusCode()).isEqualTo(400);
+        assertThat(result.getErrorType()).isEqualTo("HTTP_4XX");
     }
 
     @Test

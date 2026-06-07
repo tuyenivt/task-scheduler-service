@@ -113,7 +113,8 @@ public class OrderCancelHandler implements TaskHandler {
                 return TaskExecutionResult.httpFailure(statusCode, e.getMessage());
             }
 
-            return TaskExecutionResult.failure(e);
+            // No HTTP status: use the categorized cause (TIMEOUT, CONNECT_REFUSED, CB_OPEN, ...)
+            return TaskExecutionResult.failure(e.getMessage(), e.getCategory().name());
         } catch (Exception e) {
             log.error("Unexpected error cancelling order {}: {}", orderId, e.getMessage(), e);
             return TaskExecutionResult.failure(e);

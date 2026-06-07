@@ -131,14 +131,21 @@ public class TaskExecutionResult {
     }
 
     /**
-     * Create a failure result with HTTP status
+     * Create a failure result with HTTP status.
+     * <p>
+     * The exact status code is preserved on {@code httpStatusCode} for the
+     * execution-log row, but {@code errorType} is bucketed to {@code HTTP_4XX}
+     * / {@code HTTP_5XX} so the {@code task_scheduler_failures} metric tag
+     * stays low cardinality - alerting routes on symptom class, not on the
+     * exact status of every individual failure.
      */
     public static TaskExecutionResult httpFailure(int statusCode, String errorMessage) {
         boolean retryable = statusCode >= 500 || statusCode == 408 || statusCode == 429;
+        String bucket = statusCode >= 500 ? "HTTP_5XX" : "HTTP_4XX";
         return TaskExecutionResult.builder()
                 .success(false)
                 .errorMessage(errorMessage)
-                .errorType("HTTP_" + statusCode)
+                .errorType(bucket)
                 .httpStatusCode(statusCode)
                 .retryable(retryable)
                 .build();

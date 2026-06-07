@@ -5,6 +5,7 @@ import com.example.taskscheduler.client.ClientModels.PaymentRefundResponse;
 import com.example.taskscheduler.client.ClientModels.PaymentVoidRequest;
 import com.example.taskscheduler.client.ClientModels.PaymentVoidResponse;
 import com.example.taskscheduler.exception.ExternalServiceException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
@@ -68,12 +69,23 @@ public class PaymentServiceClient {
     }
 
     /**
-     * Fallback method when circuit breaker is open for refund
+     * Fallback invoked when refund cannot complete - circuit open, retries
+     * exhausted, or the underlying call threw. See {@link OrderServiceClient}
+     * fallback for the categorization rationale.
      */
     @SuppressWarnings("unused")
     private PaymentRefundResponse refundPaymentFallback(PaymentRefundRequest request, Exception e) {
-        log.warn("Circuit breaker open for Payment Service, payment: {}, error: {}", request.getPaymentId(), e.getMessage());
-        throw new ExternalServiceException("Payment Service", "Service temporarily unavailable (circuit breaker open)", e);
+        if (e instanceof CallNotPermittedException) {
+            log.warn("Payment Service circuit OPEN, dropping refund for payment: {}", request.getPaymentId());
+            throw new ExternalServiceException("Payment Service",
+                    "Service temporarily unavailable (circuit breaker open)", e, ErrorCategory.CB_OPEN);
+        }
+        if (e instanceof ExternalServiceException ese) {
+            throw ese;
+        }
+        log.warn("Payment Service refund fallback (uncategorized): payment={}, error={}",
+                request.getPaymentId(), e.getMessage());
+        throw new ExternalServiceException("Payment Service", e);
     }
 
     /**
@@ -109,12 +121,22 @@ public class PaymentServiceClient {
     }
 
     /**
-     * Fallback method when circuit breaker is open for void
+     * Fallback invoked when void cannot complete - see refund fallback above
+     * for the categorization rationale.
      */
     @SuppressWarnings("unused")
     private PaymentVoidResponse voidPaymentFallback(PaymentVoidRequest request, Exception e) {
-        log.warn("Circuit breaker open for Payment Service (void), payment: {}, error: {}", request.getPaymentId(), e.getMessage());
-        throw new ExternalServiceException("Payment Service", "Service temporarily unavailable (circuit breaker open)", e);
+        if (e instanceof CallNotPermittedException) {
+            log.warn("Payment Service circuit OPEN, dropping void for payment: {}", request.getPaymentId());
+            throw new ExternalServiceException("Payment Service",
+                    "Service temporarily unavailable (circuit breaker open)", e, ErrorCategory.CB_OPEN);
+        }
+        if (e instanceof ExternalServiceException ese) {
+            throw ese;
+        }
+        log.warn("Payment Service void fallback (uncategorized): payment={}, error={}",
+                request.getPaymentId(), e.getMessage());
+        throw new ExternalServiceException("Payment Service", e);
     }
 
     /**

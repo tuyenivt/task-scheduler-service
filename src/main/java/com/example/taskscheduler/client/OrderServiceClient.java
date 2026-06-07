@@ -3,6 +3,7 @@ package com.example.taskscheduler.client;
 import com.example.taskscheduler.client.ClientModels.OrderCancelRequest;
 import com.example.taskscheduler.client.ClientModels.OrderCancelResponse;
 import com.example.taskscheduler.exception.ExternalServiceException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
@@ -66,12 +67,25 @@ public class OrderServiceClient {
     }
 
     /**
-     * Fallback method when circuit breaker is open
+     * Fallback invoked when the call cannot complete - circuit open, retries
+     * exhausted, or the underlying call threw. The CB-open case is detected
+     * via {@link CallNotPermittedException}; anything else preserves the
+     * underlying cause's category so the metric tag reflects the actual
+     * failure mode.
      */
     @SuppressWarnings("unused")
     private OrderCancelResponse cancelOrderFallback(OrderCancelRequest request, Exception e) {
-        log.warn("Circuit breaker open for Order Service, order: {}, error: {}", request.getOrderId(), e.getMessage());
-        throw new ExternalServiceException("Order Service", "Service temporarily unavailable (circuit breaker open)", e);
+        if (e instanceof CallNotPermittedException) {
+            log.warn("Order Service circuit OPEN, dropping cancel for order: {}", request.getOrderId());
+            throw new ExternalServiceException("Order Service",
+                    "Service temporarily unavailable (circuit breaker open)", e, ErrorCategory.CB_OPEN);
+        }
+        if (e instanceof ExternalServiceException ese) {
+            // Already categorized at the source - propagate.
+            throw ese;
+        }
+        log.warn("Order Service fallback (uncategorized): order={}, error={}", request.getOrderId(), e.getMessage());
+        throw new ExternalServiceException("Order Service", e);
     }
 
     /**
