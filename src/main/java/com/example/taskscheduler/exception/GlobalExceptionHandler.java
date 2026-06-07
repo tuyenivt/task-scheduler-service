@@ -9,6 +9,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
@@ -69,6 +70,23 @@ public class GlobalExceptionHandler {
                 .toList();
 
         log.warn("Constraint violation: {}", errors);
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error("Validation failed", errors));
+    }
+
+    /**
+     * Spring 6.1+ raises this for parameter-level constraint violations on
+     * controller methods (eg @Min/@Max/@Size on @RequestParam or @RequestBody
+     * list parameters). Map to the same 400 shape used elsewhere so clients
+     * see a consistent contract.
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleHandlerMethodValidation(HandlerMethodValidationException ex) {
+        var errors = ex.getAllErrors().stream()
+                .map(e -> e.getDefaultMessage() != null ? e.getDefaultMessage() : e.toString())
+                .toList();
+
+        log.warn("Parameter validation failed: {}", errors);
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error("Validation failed", errors));
     }

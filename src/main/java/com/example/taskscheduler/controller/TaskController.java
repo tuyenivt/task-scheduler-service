@@ -8,6 +8,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -56,7 +59,10 @@ public class TaskController {
     @PostMapping("/batch")
     @Operation(summary = "Create multiple tasks", description = "Create multiple tasks in a single request")
     @ResponseStatus(HttpStatus.CREATED)
-    public ResponseEntity<ApiResponse<BatchCreateResult>> createTasks(@Valid @RequestBody List<@Valid CreateTaskRequest> requests) {
+    public ResponseEntity<ApiResponse<BatchCreateResult>> createTasks(
+            @Valid @RequestBody
+            @Size(max = 500, message = "Batch must contain at most 500 task requests")
+            List<@Valid CreateTaskRequest> requests) {
         log.info("API: Batch create {} tasks", requests.size());
 
         var result = taskManagementService.createTasks(requests);
@@ -102,15 +108,22 @@ public class TaskController {
             @Parameter(description = "Task type filter") @RequestParam(required = false) TaskType taskType,
             @Parameter(description = "Status filter") @RequestParam(required = false) TaskStatus status,
             @Parameter(description = "Reference ID filter") @RequestParam(required = false) String referenceId,
-            @Parameter(description = "Page number") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size,
+            @Parameter(description = "Page number (0-based)")
+            @RequestParam(defaultValue = "0")
+            @Min(value = 0, message = "page must be >= 0")
+            @Max(value = 10_000, message = "page must be <= 10000 (deep pagination is not supported; narrow filters instead)")
+            int page,
+            @Parameter(description = "Page size")
+            @RequestParam(defaultValue = "20")
+            @Min(value = 1, message = "size must be >= 1")
+            @Max(value = 100, message = "size must be <= 100")
+            int size,
             @Parameter(description = "Sort field") @RequestParam(defaultValue = "createdAt") String sortBy,
             @Parameter(description = "Sort direction") @RequestParam(defaultValue = "DESC") String sortDir) {
 
         var criteria = TaskSearchCriteria.builder().taskType(taskType).status(status).referenceId(referenceId).build();
         var sort = Sort.by(Sort.Direction.fromString(sortDir), sortBy);
-        var safeSize = Math.min(size, 100);
-        var pageable = PageRequest.of(page, safeSize, sort);
+        var pageable = PageRequest.of(page, size, sort);
 
         var tasks = taskManagementService.searchTasks(criteria, pageable);
         return ResponseEntity.ok(ApiResponse.success(tasks));
