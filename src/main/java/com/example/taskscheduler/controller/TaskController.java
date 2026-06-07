@@ -6,6 +6,9 @@ import com.example.taskscheduler.dto.*;
 import com.example.taskscheduler.service.TaskManagementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -47,9 +50,74 @@ public class TaskController {
     // === Task Creation ===
 
     @PostMapping
-    @Operation(summary = "Create a new task", description = "Create a new scheduled task for execution")
+    @Operation(
+            summary = "Create a new task",
+            description = "Create a new scheduled task for execution. If preventDuplicates=true (the default) "
+                    + "an active task already targeting the same reference + type returns 409.",
+            responses = {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "201",
+                            description = "Task created"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "400",
+                            description = "Validation failed (missing referenceId, oversized payload, invalid cron, etc.)",
+                            content = @Content(schema = @Schema(implementation = ApiResponse.class))),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "409",
+                            description = "Duplicate active task for the same reference + type",
+                            content = @Content(schema = @Schema(implementation = ApiResponse.class)))
+            })
     @ResponseStatus(HttpStatus.CREATED)
-    public ResponseEntity<ApiResponse<TaskResponse>> createTask(@Valid @RequestBody CreateTaskRequest request) {
+    public ResponseEntity<ApiResponse<TaskResponse>> createTask(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    required = true,
+                    content = @Content(
+                            schema = @Schema(implementation = CreateTaskRequest.class),
+                            examples = {
+                                    @ExampleObject(
+                                            name = "OrderCancel",
+                                            summary = "Cancel an order",
+                                            value = """
+                                                    {
+                                                      "taskType": "ORDER_CANCEL",
+                                                      "referenceId": "ORD-2026-0001",
+                                                      "priority": "HIGH",
+                                                      "payload": {
+                                                        "reason": "Customer requested cancellation",
+                                                        "cancelledBy": "support@example.com"
+                                                      }
+                                                    }
+                                                    """),
+                                    @ExampleObject(
+                                            name = "PaymentRefund",
+                                            summary = "Refund a payment",
+                                            value = """
+                                                    {
+                                                      "taskType": "PAYMENT_REFUND",
+                                                      "referenceId": "PAY-2026-0042",
+                                                      "secondaryReferenceId": "TXN-9911",
+                                                      "priority": "CRITICAL",
+                                                      "payload": {
+                                                        "amount": 1999,
+                                                        "currency": "USD",
+                                                        "reason": "Duplicate charge"
+                                                      },
+                                                      "maxRetries": 8
+                                                    }
+                                                    """),
+                                    @ExampleObject(
+                                            name = "Recurring",
+                                            summary = "Recurring webhook notification (daily at 03:00 UTC)",
+                                            value = """
+                                                    {
+                                                      "taskType": "WEBHOOK_NOTIFICATION",
+                                                      "referenceId": "DAILY-SETTLEMENT",
+                                                      "cronExpression": "0 0 3 * * *",
+                                                      "preventDuplicates": false
+                                                    }
+                                                    """)
+                            }))
+            @Valid @RequestBody CreateTaskRequest request) {
         log.info("API: Create task request for type {} reference {}", request.getTaskType(), request.getReferenceId());
 
         var response = taskManagementService.createTask(request);
@@ -181,8 +249,38 @@ public class TaskController {
     // === Bulk Operations ===
 
     @PostMapping("/bulk/cancel")
-    @Operation(summary = "Cancel multiple tasks", description = "Cancel multiple tasks at once with per-id outcome")
-    public ResponseEntity<ApiResponse<BulkCancelResult>> cancelTasks(@Valid @RequestBody BulkTaskRequest request) {
+    @Operation(
+            summary = "Cancel multiple tasks",
+            description = "Idempotent bulk cancel with per-id outcome. Each id is processed in its own "
+                    + "transaction so a single failure (not found, currently locked, terminal-but-not-CANCELLED) "
+                    + "does not roll back the rest. Re-cancelling an already-CANCELLED task is reported as "
+                    + "succeeded, so callers can safely retry the whole list.",
+            responses = {
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "200",
+                            description = "Per-id outcome returned (some may have failed; see body.failed[])"),
+                    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                            responseCode = "400",
+                            description = "Request rejected (empty list, too many ids, malformed UUIDs)")
+            })
+    public ResponseEntity<ApiResponse<BulkCancelResult>> cancelTasks(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    required = true,
+                    content = @Content(
+                            schema = @Schema(implementation = BulkTaskRequest.class),
+                            examples = @ExampleObject(
+                                    name = "BulkCancel",
+                                    summary = "Cancel a batch of pending tasks",
+                                    value = """
+                                            {
+                                              "taskIds": [
+                                                "11111111-1111-1111-1111-111111111111",
+                                                "22222222-2222-2222-2222-222222222222"
+                                              ],
+                                              "reason": "Customer support ticket #4711"
+                                            }
+                                            """)))
+            @Valid @RequestBody BulkTaskRequest request) {
         log.info("API: Bulk cancel {} tasks", request.getTaskIds().size());
 
         var result = taskManagementService.cancelTasks(request.getTaskIds(), request.getReason());
