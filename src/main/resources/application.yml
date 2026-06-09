@@ -90,6 +90,13 @@ task-scheduler:
   execution-log-retention-days: ${EXECUTION_LOG_RETENTION_DAYS:30}
   retention-cron: ${RETENTION_CRON:0 0 3 * * *}
 
+  # Shared retry-jitter band applied to every handler's calculateNextRetryDelayMs.
+  # Each retry's actual delay is base + uniform(base * floor%, base * ceiling%)
+  # so simultaneous retries spread out and do not stampede a recovering downstream.
+  retry:
+    jitter-floor-percent: ${RETRY_JITTER_FLOOR_PERCENT:10}
+    jitter-ceiling-percent: ${RETRY_JITTER_CEILING_PERCENT:25}
+
 external-services:
   order-service:
     base-url: ${ORDER_SERVICE_URL:http://order-service:8080}

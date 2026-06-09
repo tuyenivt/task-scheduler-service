@@ -2,16 +2,17 @@ package com.example.taskscheduler.service.handler;
 
 import com.example.taskscheduler.client.ClientModels.PaymentRefundResponse;
 import com.example.taskscheduler.client.PaymentServiceClient;
+import com.example.taskscheduler.config.TaskSchedulerProperties;
 import com.example.taskscheduler.domain.entity.ScheduledTask;
 import com.example.taskscheduler.domain.enums.TaskPriority;
 import com.example.taskscheduler.domain.enums.TaskStatus;
 import com.example.taskscheduler.domain.enums.TaskType;
 import com.example.taskscheduler.exception.ExternalServiceException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -33,8 +34,15 @@ class PaymentRefundHandlerTest {
     @Mock
     private PaymentServiceClient paymentServiceClient;
 
-    @InjectMocks
     private PaymentRefundHandler handler;
+
+    @BeforeEach
+    void setUp() {
+        // Real RetryDelayCalculator with default jitter band (10-25%) so the
+        // existing delay-range assertions in this test class continue to hold.
+        handler = new PaymentRefundHandler(paymentServiceClient,
+                new RetryDelayCalculator(new TaskSchedulerProperties()));
+    }
 
     @Test
     @DisplayName("Should return PAYMENT_REFUND task type")

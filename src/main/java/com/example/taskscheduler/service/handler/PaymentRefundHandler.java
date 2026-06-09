@@ -11,7 +11,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Handler for PAYMENT_REFUND tasks.
@@ -33,6 +32,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class PaymentRefundHandler implements TaskHandler {
 
     private final PaymentServiceClient paymentServiceClient;
+    private final RetryDelayCalculator retryDelayCalculator;
 
     @Override
     public TaskType getTaskType() {
@@ -133,7 +133,7 @@ public class PaymentRefundHandler implements TaskHandler {
         // Payment refunds might need more careful retry strategy
         var customDelayHours = task.getMetadataValue("retryDelayHours", Integer.class);
         if (customDelayHours != null) {
-            return addJitter(customDelayHours * 60L * 60L * 1000L);
+            return retryDelayCalculator.addJitter(customDelayHours * 60L * 60L * 1000L);
         }
 
         // For payment operations, be more conservative
@@ -141,19 +141,14 @@ public class PaymentRefundHandler implements TaskHandler {
         var retryCount = task.getRetryCount();
         if (retryCount == 0) {
             // First retry after 2 hours
-            return addJitter(2L * 60L * 60L * 1000L);
+            return retryDelayCalculator.addJitter(2L * 60L * 60L * 1000L);
         } else if (retryCount < 3) {
             // 6 hours, then 12 hours
-            return addJitter((3L + retryCount * 3L) * 60L * 60L * 1000L);
+            return retryDelayCalculator.addJitter((3L + retryCount * 3L) * 60L * 60L * 1000L);
         }
 
         // After 3 retries, switch to daily retries
-        return addJitter(defaultDelayHours * 60L * 60L * 1000L);
-    }
-
-    private long addJitter(long baseDelayMs) {
-        long jitter = ThreadLocalRandom.current().nextLong(baseDelayMs / 10, baseDelayMs / 4 + 1);
-        return baseDelayMs + jitter;
+        return retryDelayCalculator.addJitter(defaultDelayHours * 60L * 60L * 1000L);
     }
 
     private boolean isSuccessStatus(String status) {

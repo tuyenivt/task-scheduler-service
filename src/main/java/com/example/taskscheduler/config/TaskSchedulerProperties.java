@@ -108,4 +108,25 @@ public class TaskSchedulerProperties {
      */
     @Min(1)
     private int executionLogRetentionDays = 30;
+
+    /**
+     * Retry-delay knobs shared across all task handlers.
+     */
+    private Retry retry = new Retry();
+
+    /**
+     * Centralized retry-jitter configuration.
+     * <p>
+     * The jitter band is {@code [floor%, ceiling%]} of the base delay - one knob
+     * pair per cluster so every handler picks up the same spread and operators
+     * can dampen thundering herd globally without editing source.
+     */
+    @Data
+    public static class Retry {
+        @Min(0)
+        private int jitterFloorPercent = 10;
+
+        @Min(1)
+        private int jitterCeilingPercent = 25;
+    }
 }

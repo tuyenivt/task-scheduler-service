@@ -2,16 +2,17 @@ package com.example.taskscheduler.service.handler;
 
 import com.example.taskscheduler.client.ClientModels.OrderCancelResponse;
 import com.example.taskscheduler.client.OrderServiceClient;
+import com.example.taskscheduler.config.TaskSchedulerProperties;
 import com.example.taskscheduler.domain.entity.ScheduledTask;
 import com.example.taskscheduler.domain.enums.TaskPriority;
 import com.example.taskscheduler.domain.enums.TaskStatus;
 import com.example.taskscheduler.domain.enums.TaskType;
 import com.example.taskscheduler.exception.ExternalServiceException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -32,8 +33,15 @@ class OrderCancelHandlerTest {
     @Mock
     private OrderServiceClient orderServiceClient;
 
-    @InjectMocks
     private OrderCancelHandler handler;
+
+    @BeforeEach
+    void setUp() {
+        // Real RetryDelayCalculator with default jitter band (10-25%) so the
+        // existing delay-range assertions in this test class continue to hold.
+        handler = new OrderCancelHandler(orderServiceClient,
+                new RetryDelayCalculator(new TaskSchedulerProperties()));
+    }
 
     @Test
     @DisplayName("Should return ORDER_CANCEL task type")
