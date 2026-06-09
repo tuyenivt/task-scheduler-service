@@ -20,7 +20,39 @@ A high-volume, distributed task scheduler service for back-office operations bui
 
 ## Architecture
 
-![Architecture](/architecture.png)
+![Architecture](architecture.png)
+
+Source-controlled equivalent (renders on GitHub; edit here instead of the PNG):
+
+```mermaid
+flowchart TB
+    subgraph svc["Task Scheduler Service"]
+        ctl["REST API Controller"]
+        poll["Polling Service<br/>(ShedLock)"]
+        exec["Task Executor<br/>(Virtual Threads)"]
+        reg["Task Handler Registry"]
+        mgmt["Task Management Service"]
+
+        ctl --> mgmt
+        poll --> exec
+        exec --> reg
+        mgmt --> reg
+    end
+
+    pg[(PostgreSQL)]
+    ord["Order Service<br/>(API)"]
+    pay["Payment Service<br/>(API)"]
+    slk["Slack<br/>(alerts)"]
+    otel["OTLP collector<br/>(Jaeger/Tempo)"]
+
+    mgmt --> pg
+    exec --> pg
+    poll --> pg
+    exec -- via handlers --> ord
+    exec -- via handlers --> pay
+    exec -- max-retries / DLQ --> slk
+    svc -. spans .-> otel
+```
 
 ## Technology Stack
 
