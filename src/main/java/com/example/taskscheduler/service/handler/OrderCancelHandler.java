@@ -74,14 +74,11 @@ public class OrderCancelHandler implements TaskHandler {
                         "cancelledAt", response.getCancelledAt() != null ? response.getCancelledAt() : ""
                 ));
             } else {
-                // Unexpected response status
                 var status = response != null ? response.getStatus() : "null";
                 var message = response != null ? response.getMessage() : "No response";
-                log.warn("Order cancellation returned unexpected status: {} for order: {}", status, orderId);
-                return TaskExecutionResult.failure(
-                        String.format("Unexpected status: %s - %s", status, message),
-                        "UNEXPECTED_STATUS"
-                );
+                var formatted = TaskExecutionResult.unexpectedStatusMessage(getTaskType(), status, message);
+                log.warn("{} (reference={})", formatted, orderId);
+                return TaskExecutionResult.unexpectedStatus(getTaskType(), status, message);
             }
         } catch (ExternalServiceException e) {
             log.error("Order Service error for order {}: {}", orderId, e.getMessage());

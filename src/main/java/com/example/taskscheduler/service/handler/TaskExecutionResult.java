@@ -1,5 +1,6 @@
 package com.example.taskscheduler.service.handler;
 
+import com.example.taskscheduler.domain.enums.TaskType;
 import lombok.Builder;
 import lombok.Data;
 
@@ -103,6 +104,26 @@ public class TaskExecutionResult {
                 .errorType(errorType)
                 .retryable(true)
                 .build();
+    }
+
+    /**
+     * Format a "downstream returned an unexpected response status" message in a
+     * consistent shape across handlers. Centralizing the template keeps
+     * log-grepping and alerting rules simple - every handler emits the same
+     * pattern and only the {TaskType} segment differs.
+     */
+    public static String unexpectedStatusMessage(TaskType taskType, String status, String detail) {
+        return String.format("%s unexpected response status: %s - %s",
+                taskType.getDisplayName(), status, detail);
+    }
+
+    /**
+     * Convenience: build a retryable failure for the "unexpected status"
+     * case with the standardized message and {@code UNEXPECTED_STATUS}
+     * error type so alerting can route on a stable label.
+     */
+    public static TaskExecutionResult unexpectedStatus(TaskType taskType, String status, String detail) {
+        return failure(unexpectedStatusMessage(taskType, status, detail), "UNEXPECTED_STATUS");
     }
 
     /**

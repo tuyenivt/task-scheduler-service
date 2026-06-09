@@ -83,11 +83,9 @@ public class PaymentRefundHandler implements TaskHandler {
             } else {
                 var status = response != null ? response.getStatus() : "null";
                 var message = response != null ? response.getMessage() : "No response";
-                log.warn("Payment refund returned unexpected status: {} for payment: {}", status, paymentId);
-                return TaskExecutionResult.failure(
-                        String.format("Unexpected status: %s - %s", status, message),
-                        "UNEXPECTED_STATUS"
-                );
+                var formatted = TaskExecutionResult.unexpectedStatusMessage(getTaskType(), status, message);
+                log.warn("{} (reference={})", formatted, paymentId);
+                return TaskExecutionResult.unexpectedStatus(getTaskType(), status, message);
             }
         } catch (ExternalServiceException e) {
             log.error("Payment Service error for payment {}: {}", paymentId, e.getMessage());
