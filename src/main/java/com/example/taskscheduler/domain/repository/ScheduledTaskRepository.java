@@ -61,10 +61,14 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
     /**
      * Atomically acquire a lock on a task for processing.
      * <p>
-     * The lock predicate (lockedBy IS NULL OR lockedUntil < now) is the single
-     * source of truth - at most one caller wins for a given (id, now). The caller
-     * should re-read the row via findById within the same transaction to obtain
-     * the post-lock state, eliminating the poll/execute version race.
+     * Two predicates together gate acquisition: the row must (a) not be locked
+     * by another live owner, and (b) be in a status the poller would itself
+     * consider executable, or be PROCESSING with an expired lock (which means
+     * a prior holder crashed mid-execution and the row is safe to re-acquire).
+     * The status filter mirrors {@code findTasksForExecution}'s status list so
+     * any caller bypassing the SKIP LOCKED poll (eg. manual retry via
+     * {@code processTaskAsync}) cannot accidentally re-execute a COMPLETED,
+     * CANCELLED, EXPIRED, or terminal-failure row.
      *
      * @return number of rows updated (1 if lock won, 0 otherwise)
      */
@@ -78,6 +82,7 @@ public interface ScheduledTaskRepository extends JpaRepository<ScheduledTask, UU
                 t.updatedAt = :now
             WHERE t.id = :taskId
               AND (t.lockedBy IS NULL OR t.lockedUntil < :now)
+              AND t.status IN ('PENDING', 'SCHEDULED', 'FAILED', 'RETRY_PENDING', 'PROCESSING')
             """)
     int acquireTaskLock(
             @Param("taskId") UUID taskId,
