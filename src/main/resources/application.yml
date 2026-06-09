@@ -71,16 +71,14 @@ task-scheduler:
   default-max-retries: ${DEFAULT_MAX_RETRIES:5}
   default-retry-delay-hours: ${DEFAULT_RETRY_DELAY_HOURS:24}
 
-  # Task lock duration (prevents other instances from picking same task)
-  lock-duration-minutes: ${LOCK_DURATION_MINUTES:30}
-
-  # Stale task threshold (legacy; retained for compatibility)
-  stale-task-threshold-minutes: ${STALE_TASK_THRESHOLD_MINUTES:60}
+  # Task lock duration (prevents other instances from picking same task).
+  # Accepts ISO-8601 (PT30M) or Spring relaxed (30m, 1h). Bare integer = minutes.
+  lock-duration: ${LOCK_DURATION_MINUTES:30}
 
   # Grace period beyond locked_until before a row is treated as abandoned.
-  # Combined with lock-duration-minutes, this proves the original lock-holder
-  # is almost certainly gone before the cleanup job resets the row.
-  stale-task-grace-minutes: ${STALE_TASK_GRACE_MINUTES:5}
+  # Combined with lock-duration, this proves the original lock-holder is almost
+  # certainly gone before the cleanup job resets the row.
+  stale-task-grace: ${STALE_TASK_GRACE_MINUTES:5}
 
   # Retention windows for terminal task rows and execution logs. The retention
   # job runs daily by default; override the cron via task-scheduler.retention-cron.

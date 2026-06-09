@@ -130,7 +130,7 @@ class TaskPollingServiceTest {
         @DisplayName("Should reset stale tasks")
         void shouldResetStaleTasks() {
             // Given
-            when(properties.getStaleTaskGraceMinutes()).thenReturn(5);
+            when(properties.getStaleTaskGrace()).thenReturn(java.time.Duration.ofMinutes(5));
             var staleTask = ScheduledTask.builder()
                     .id(UUID.randomUUID())
                     .taskType(TaskType.PAYMENT_REFUND)
@@ -156,7 +156,7 @@ class TaskPollingServiceTest {
         void shouldReportSkippedWhenLockRaced() {
             // Given a stale candidate, but the conditional UPDATE returns 0 because
             // the lock was re-acquired between the read and the reset.
-            when(properties.getStaleTaskGraceMinutes()).thenReturn(5);
+            when(properties.getStaleTaskGrace()).thenReturn(java.time.Duration.ofMinutes(5));
             var staleTask = ScheduledTask.builder()
                     .id(UUID.randomUUID())
                     .taskType(TaskType.PAYMENT_REFUND)
@@ -181,7 +181,7 @@ class TaskPollingServiceTest {
         @DisplayName("Should handle no stale tasks")
         void shouldHandleNoStaleTasks() {
             // Given
-            when(properties.getStaleTaskGraceMinutes()).thenReturn(5);
+            when(properties.getStaleTaskGrace()).thenReturn(java.time.Duration.ofMinutes(5));
             when(taskRepository.findStaleTasks(any(Instant.class))).thenReturn(List.of());
 
             // When

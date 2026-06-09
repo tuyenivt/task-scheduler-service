@@ -3,8 +3,12 @@ package com.example.taskscheduler.config;
 import jakarta.validation.constraints.Min;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.convert.DurationUnit;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
+
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 
 /**
  * Configuration properties for the task scheduler.
@@ -58,37 +62,36 @@ public class TaskSchedulerProperties {
     private int defaultRetryDelayHours = 24;
 
     /**
-     * Lock duration in minutes.
+     * Per-task lock duration.
+     * <p>
+     * Accepts ISO-8601 ({@code PT30M}) or Spring's relaxed format ({@code 30m},
+     * {@code 1h}). A bare integer is interpreted in minutes via
+     * {@link DurationUnit}, preserving the old {@code LOCK_DURATION_MINUTES=30}
+     * env var semantics.
      * <p>
      * Contract: must strictly exceed any handler's worst-case execution time
      * (including all retries within a single dispatch) plus a safety margin for
      * GC pauses and clock skew. Setting this too low risks resetting an
      * in-flight task and causing duplicate external side effects.
      */
-    @Min(1)
-    private int lockDurationMinutes = 30;
+    @DurationUnit(ChronoUnit.MINUTES)
+    private Duration lockDuration = Duration.ofMinutes(30);
 
     /**
-     * Threshold in minutes after which a locked task is considered stale.
+     * Extra grace period added to {@code lockedUntil} before a row is treated
+     * as abandoned by the stale-task cleanup job.
      * <p>
-     * Retained for backward compatibility but no longer drives the abandonment
-     * check directly - {@link #staleTaskGraceMinutes} is the authoritative knob.
-     */
-    @Min(1)
-    private int staleTaskThresholdMinutes = 60;
-
-    /**
-     * Extra grace period (in minutes) added to {@code lockedUntil} before a row
-     * is treated as abandoned by the stale-task cleanup job.
+     * Accepts ISO-8601 ({@code PT5M}) or Spring's relaxed format ({@code 5m}).
+     * Bare integers are interpreted in minutes for parity with the env var.
      * <p>
      * A row is reset only when {@code locked_until + grace < now}, i.e. the lock
-     * window has been expired for at least {@code grace} minutes. This makes the
+     * window has been expired for at least {@code grace}. This makes the
      * abandonment check robust to clock skew and short GC pauses on the
-     * lock-holder. Combined with the {@link #lockDurationMinutes} contract,
+     * lock-holder. Combined with the {@link #lockDuration} contract,
      * resetting a row implies the original holder is almost certainly gone.
      */
-    @Min(1)
-    private int staleTaskGraceMinutes = 5;
+    @DurationUnit(ChronoUnit.MINUTES)
+    private Duration staleTaskGrace = Duration.ofMinutes(5);
 
     /**
      * Retention (in days) for terminal-state rows in {@code scheduled_tasks}.

@@ -368,7 +368,7 @@ class TaskExecutorServiceTest {
         @DisplayName("Should acquire lock and return post-lock snapshot")
         void shouldAcquireLockSuccessfully() {
             // Given
-            when(properties.getLockDurationMinutes()).thenReturn(30);
+            when(properties.getLockDuration()).thenReturn(java.time.Duration.ofMinutes(30));
             when(taskRepository.acquireTaskLock(eq(testTaskId), anyString(), any(), any()))
                     .thenReturn(1);
             when(taskRepository.findById(testTaskId)).thenReturn(Optional.of(testTask));
@@ -384,7 +384,7 @@ class TaskExecutorServiceTest {
         @DisplayName("Should return empty when atomic UPDATE updates zero rows")
         void shouldFailToAcquireLockWhenAlreadyLocked() {
             // Given
-            when(properties.getLockDurationMinutes()).thenReturn(30);
+            when(properties.getLockDuration()).thenReturn(java.time.Duration.ofMinutes(30));
             when(taskRepository.acquireTaskLock(eq(testTaskId), anyString(), any(), any()))
                     .thenReturn(0);
 
@@ -400,7 +400,7 @@ class TaskExecutorServiceTest {
         @DisplayName("Should return empty when lock won but row disappeared before re-read")
         void shouldReturnEmptyWhenRowDisappearsAfterLock() {
             // Given
-            when(properties.getLockDurationMinutes()).thenReturn(30);
+            when(properties.getLockDuration()).thenReturn(java.time.Duration.ofMinutes(30));
             when(taskRepository.acquireTaskLock(eq(testTaskId), anyString(), any(), any()))
                     .thenReturn(1);
             when(taskRepository.findById(testTaskId)).thenReturn(Optional.empty());

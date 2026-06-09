@@ -217,7 +217,7 @@ public class TaskPollingService {
     public void cleanupStaleTasks() {
         try {
             var now = Instant.now();
-            var cutoff = now.minusSeconds(properties.getStaleTaskGraceMinutes() * 60L);
+            var cutoff = now.minus(properties.getStaleTaskGrace());
 
             var staleTasks = taskRepository.findStaleTasks(cutoff);
 

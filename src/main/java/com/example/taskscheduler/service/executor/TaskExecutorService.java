@@ -248,7 +248,7 @@ public class TaskExecutorService {
     @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public Optional<ScheduledTask> acquireLockAndFetch(UUID taskId) {
         var now = Instant.now();
-        var lockUntil = now.plusSeconds(properties.getLockDurationMinutes() * 60L);
+        var lockUntil = now.plus(properties.getLockDuration());
 
         var updated = taskRepository.acquireTaskLock(taskId, getInstanceId(), lockUntil, now);
 
