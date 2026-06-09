@@ -9,6 +9,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -178,6 +179,13 @@ public class TaskPollingService {
      * The polled task carries only an ID hint; the authoritative state is
      * whatever {@code acquireLockAndFetch} returns under the atomic UPDATE,
      * so we never execute against the stale poll-time snapshot.
+     * <p>
+     * Exceptions that escape the lock-acquire / execute chain are caught here,
+     * tagged with the offending taskId in MDC, and counted in
+     * {@code task_scheduler_dispatch_errors_total} (tagged with the exception
+     * class). Without the counter these would be silent log-only events - the
+     * dispatcher would keep running, but Prometheus alerting would have no
+     * symptom to fire on.
      */
     private boolean processTask(ScheduledTask task) {
         var taskId = task.getId();
@@ -191,7 +199,15 @@ public class TaskPollingService {
 
             return taskExecutorService.executeTask(locked.get());
         } catch (Exception e) {
-            log.error("Error processing task {}: {}", taskId, e.getMessage(), e);
+            MDC.put("taskId", taskId.toString());
+            try {
+                log.error("Dispatcher error processing task {}: {}", taskId, e.getMessage(), e);
+            } finally {
+                MDC.remove("taskId");
+            }
+            meterRegistry.counter("task_scheduler_dispatch_errors_total",
+                    "exception", e.getClass().getSimpleName()
+            ).increment();
             return false;
         }
     }

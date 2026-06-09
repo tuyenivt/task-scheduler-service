@@ -22,6 +22,8 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -39,14 +41,16 @@ class TaskPollingServiceTest {
     private TaskSchedulerProperties properties;
 
     private TaskPollingService taskPollingService;
+    private SimpleMeterRegistry meterRegistry;
 
     private ScheduledTask testTask;
 
     @BeforeEach
     void setUp() {
         ExecutorService executor = Executors.newFixedThreadPool(2);
+        meterRegistry = new SimpleMeterRegistry();
         taskPollingService = new TaskPollingService(
-                taskRepository, taskExecutorService, properties, executor, new SimpleMeterRegistry());
+                taskRepository, taskExecutorService, properties, executor, meterRegistry);
         taskPollingService.registerGauges();
 
         testTask = ScheduledTask.builder()
@@ -118,6 +122,32 @@ class TaskPollingServiceTest {
 
             // Then
             verify(taskExecutorService, timeout(5000)).acquireLockAndFetch(eq(testTask.getId()));
+            verify(taskExecutorService, never()).executeTask(any());
+        }
+
+        @Test
+        @DisplayName("Should increment dispatch-error counter when acquireLockAndFetch throws")
+        void shouldCountDispatchErrors() {
+            // Given: the lock-acquire call blows up unexpectedly (eg. DB blip)
+            when(properties.getBatchSize()).thenReturn(100);
+            when(properties.getPollIntervalMs()).thenReturn(30_000L);
+            when(taskRepository.findTasksForExecution(any(Instant.class), eq(100)))
+                    .thenReturn(List.of(testTask));
+            when(taskExecutorService.acquireLockAndFetch(eq(testTask.getId())))
+                    .thenThrow(new IllegalStateException("DB connection lost"));
+
+            // When
+            taskPollingService.pollAndProcessTasks();
+
+            // Then: the dispatcher catches it, increments the counter tagged
+            // with the exception class, and never tries to execute.
+            await().atMost(java.time.Duration.ofSeconds(5)).untilAsserted(() -> {
+                var counter = meterRegistry.find("task_scheduler_dispatch_errors_total")
+                        .tag("exception", "IllegalStateException")
+                        .counter();
+                assertThat(counter).isNotNull();
+                assertThat(counter.count()).isEqualTo(1.0);
+            });
             verify(taskExecutorService, never()).executeTask(any());
         }
     }
