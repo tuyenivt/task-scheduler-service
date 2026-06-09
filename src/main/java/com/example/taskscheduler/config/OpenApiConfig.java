@@ -46,6 +46,10 @@ public class OpenApiConfig {
                                 **Errors:** 400 for validation, 404 for missing tasks, 409 for duplicate / invalid state transitions,
                                 502 for upstream service failures, 500 for unexpected errors. See `ApiResponse.errors[]` for per-field
                                 detail on validation failures.
+
+                                **Versioning:** All routes are prefixed `/api/vN/`; today only `v1` exists. Breaking-change
+                                criteria, parallel-version policy, and the sunset timeline are documented in
+                                [docs/api-versioning.md](https://github.com/example/task-scheduler-service/blob/main/docs/api-versioning.md).
                                 """)
                         .contact(new Contact()
                                 .name("Platform Team")
