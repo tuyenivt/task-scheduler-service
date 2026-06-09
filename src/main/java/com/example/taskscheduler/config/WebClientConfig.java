@@ -41,6 +41,15 @@ public class WebClientConfig {
     private int paymentServiceTimeout;
 
     /**
+     * Value surfaced to downstream services in the X-Service-Name header.
+     * Sourced from spring.application.name so renaming the app stays in sync
+     * with the header on every outbound call (alerting + downstream allow-lists
+     * see the same identifier).
+     */
+    @Value("${spring.application.name:task-scheduler}")
+    private String applicationName;
+
+    /**
      * WebClient for Order Service API calls
      */
     @Bean(name = "orderServiceWebClient")
@@ -77,7 +86,7 @@ public class WebClientConfig {
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader("X-Service-Name", "task-scheduler")
+                .defaultHeader("X-Service-Name", applicationName)
                 .filter(logRequest(serviceName))
                 .filter(logResponse(serviceName))
                 .filter(handleErrors(serviceName))
