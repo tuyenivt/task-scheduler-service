@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -257,8 +258,19 @@ public class SlackAlertService {
         return slackProperties.getWebhookUrl() == null || slackProperties.getWebhookUrl().isBlank();
     }
 
+    /**
+     * Compose the dashboard task-detail URL. Goes through
+     * {@link UriComponentsBuilder} so the {@code taskId} segment is properly
+     * encoded and a trailing slash on the base URL does not produce a
+     * malformed {@code //tasks/...} path - both cheap defenses given that the
+     * link ends up in Slack where a broken URL during an incident is the
+     * worst possible UX.
+     */
     private String buildTaskLink(String taskId) {
-        return slackProperties.getDashboardBaseUrl() + "/tasks/" + taskId;
+        return UriComponentsBuilder.fromUriString(slackProperties.getDashboardBaseUrl())
+                .pathSegment("tasks", taskId)
+                .build()
+                .toUriString();
     }
 
     private String truncate(String text, int maxLength) {
