@@ -2,11 +2,16 @@ package com.example.taskscheduler.domain.enums;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 /**
  * Comprehensive task status enum covering the complete task lifecycle.
  * Follows typical task scheduler state machine patterns.
  */
+@Slf4j
 @Getter
 @RequiredArgsConstructor
 public enum TaskStatus {
@@ -86,7 +91,12 @@ public enum TaskStatus {
     private final boolean executable;
 
     /**
-     * Find TaskStatus by its code value
+     * Find TaskStatus by its code value.
+     * <p>
+     * Logs the offending code and the full set of valid codes at WARN before
+     * raising, so operators investigating a row with a corrupt or out-of-date
+     * status column can identify the bad value without re-running the failure
+     * to capture the exception message.
      */
     public static TaskStatus fromCode(String code) {
         for (var status : values()) {
@@ -94,6 +104,10 @@ public enum TaskStatus {
                 return status;
             }
         }
+        var validCodes = Arrays.stream(values())
+                .map(TaskStatus::getCode)
+                .collect(Collectors.joining(", "));
+        log.warn("TaskStatus.fromCode: unknown code='{}' (valid codes: [{}])", code, validCodes);
         throw new IllegalArgumentException("Unknown task status code: " + code);
     }
 
