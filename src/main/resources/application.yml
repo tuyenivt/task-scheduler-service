@@ -182,6 +182,17 @@ management:
       probes:
         enabled: true
   health:
+    # DataSourceHealthIndicator is auto-configured by Spring Boot when JDBC is
+    # on the classpath; set explicitly here so the intent ("yes, expose DB pool
+    # in /actuator/health") is loud and won't be silently turned off by a
+    # future starter that flips the default.
+    db:
+      enabled: true
+    # Resilience4j contributes one indicator per CB instance under
+    # /actuator/health/components/circuitBreakers/<name>. Operators see CLOSED
+    # / HALF_OPEN / OPEN state directly; the custom circuitBreakerStatus
+    # indicator aggregates them into one details payload for at-a-glance
+    # inspection without marking the whole instance DOWN on a single open CB.
     circuitbreakers:
       enabled: true
   metrics:
