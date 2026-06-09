@@ -33,11 +33,14 @@ public class RetentionService {
 
     /**
      * Runs daily at 03:00 server time, when traffic is typically lowest.
-     * Deletes terminal-state task rows whose {@code completed_at} is older than
-     * the configured retention, then prunes execution-log rows whose
-     * {@code created_at} is older than the (always-at-least-as-large) log
-     * retention window. The order matters: logs are deleted second so child
-     * rows do not outlive their parents.
+     * Deletes terminal-state task rows whose {@code completed_at} is older
+     * than the configured retention; the {@code ON DELETE CASCADE} FK on
+     * {@code task_execution_logs.task_id} carries their child log rows with
+     * them, so explicit log deletion is only needed for logs whose parent task
+     * is still inside its retention window but whose own retention has expired.
+     * <p>
+     * The order matters: logs are deleted second so a logs-only purge cannot
+     * outrun the parent task deletion that the CASCADE would otherwise handle.
      */
     @Scheduled(cron = "${task-scheduler.retention-cron:0 0 3 * * *}")
     @SchedulerLock(name = "retentionJob", lockAtLeastFor = "1m", lockAtMostFor = "30m")
@@ -46,8 +49,9 @@ public class RetentionService {
         var now = Instant.now();
 
         // Floor log retention to task retention so logs cannot disappear ahead
-        // of their parent task rows; operators who misconfigure get the safe
-        // default instead of a stranded-history bug.
+        // of their parent task rows; with the FK in place this is belt-and-
+        // braces against an operator who shortens log retention below task
+        // retention by mistake.
         int logRetention = Math.max(properties.getExecutionLogRetentionDays(), properties.getRetentionDays());
 
         var taskCutoff = now.minus(properties.getRetentionDays(), ChronoUnit.DAYS);

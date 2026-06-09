@@ -33,7 +33,15 @@ public class TaskExecutionLog {
     private UUID id;
 
     /**
-     * Reference to the task
+     * Reference to the parent {@code scheduled_tasks(id)}.
+     * <p>
+     * Enforced as a foreign key with {@code ON DELETE CASCADE} at the schema
+     * level (see V3 migration) - deleting a task row automatically removes its
+     * execution logs, so the retention job does not need to coordinate log
+     * retention vs task retention windows. Modeled as a raw {@code UUID} (not
+     * a {@code @ManyToOne}) to avoid the join overhead and lazy-load surprises;
+     * execution log rows are append-only history and almost never joined to
+     * their parent at runtime.
      */
     @Column(name = "task_id", nullable = false)
     private UUID taskId;
