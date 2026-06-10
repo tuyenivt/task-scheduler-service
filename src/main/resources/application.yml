@@ -228,10 +228,10 @@ logging:
     com.example.taskscheduler: ${LOG_LEVEL:INFO}
     org.springframework.transaction: INFO
     org.hibernate.SQL: ${HIBERNATE_SQL_LOG:WARN}
-  pattern:
-    # trace_id/span_id are added by Micrometer Tracing so log lines can be
-    # correlated to spans in Jaeger/Tempo.
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} [taskId=%X{taskId} taskType=%X{taskType} ref=%X{referenceId}] - %msg%n"
+  # Console pattern lives in logback-spring.xml so the encoder can switch by
+  # Spring profile (JSON for `prod`, human-readable elsewhere). Setting
+  # logging.pattern.console here would override the XML and break the JSON
+  # encoder under `prod`, so it is intentionally omitted.
 
 springdoc:
   api-docs:
