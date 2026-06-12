@@ -271,11 +271,9 @@ class TaskExecutorServiceTest {
         @Test
         @DisplayName("Should mark expired task")
         void shouldMarkExpiredTask() {
-            // Given
+            // Given: an expired task is rejected by canExecute() before the timer
+            // starts or an execution-log row is written, so neither is stubbed.
             testTask.setExpiresAt(Instant.now().minusSeconds(3600)); // expired 1 hour ago
-            when(metricsConfig.startTaskExecutionTimer()).thenReturn(mockTimerSample);
-            when(executionLogRepository.save(any(TaskExecutionLog.class)))
-                    .thenAnswer(inv -> inv.getArgument(0));
             when(taskRepository.save(any(ScheduledTask.class))).thenAnswer(inv -> inv.getArgument(0));
 
             // When
@@ -285,6 +283,8 @@ class TaskExecutorServiceTest {
             assertThat(result).isFalse();
             verify(taskRepository).save(taskCaptor.capture());
             assertThat(taskCaptor.getValue().getStatus()).isEqualTo(TaskStatus.EXPIRED);
+            // No execution-log row should be written for a task that never ran.
+            verify(executionLogRepository, never()).save(any(TaskExecutionLog.class));
         }
 
         @Test

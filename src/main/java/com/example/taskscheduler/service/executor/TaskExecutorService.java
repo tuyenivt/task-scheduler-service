@@ -168,22 +168,28 @@ public class TaskExecutorService {
 
         log.info("Starting execution of task {} (type: {}, reference: {})", taskId, task.getTaskType(), task.getReferenceId());
 
+        // State and data validation run BEFORE the timer starts and the
+        // execution-log row is written, so a non-executable or malformed task
+        // does not pollute execution history or skew the timing histogram.
+        //
+        // Payload validation here is defense-in-depth: the primary gate is
+        // TaskHandler.validateForCreate(...) at the API boundary (a malformed
+        // payload is rejected with HTTP 400 before a row is ever persisted).
+        // This re-check only catches rows that bypassed the API (direct DB
+        // seeding) or that predate a tightening of the handler's contract.
+        if (!canExecute(task)) {
+            log.warn("Task {} cannot be executed in current state: {}", taskId, task.getStatus());
+            return false;
+        }
+
+        var handler = handlerRegistry.getHandlerOrThrow(task.getTaskType());
+
         var timerSample = metricsConfig.startTaskExecutionTimer();
         var startTime = Instant.now();
         var executionLog = createExecutionLog(task, startTime);
 
         try {
-            // Validate task can be executed
-            if (!canExecute(task)) {
-                log.warn("Task {} cannot be executed in current state: {}",
-                        taskId, task.getStatus());
-                return false;
-            }
-
-            // Get handler for this task type
-            var handler = handlerRegistry.getHandlerOrThrow(task.getTaskType());
-
-            // Validate task data
+            // Defense-in-depth payload validation (see contract note above).
             try {
                 handler.validate(task);
             } catch (IllegalArgumentException e) {
