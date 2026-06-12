@@ -35,9 +35,12 @@ This is a distributed task scheduler service (Java 21 / Spring Boot 3.5 / Postgr
 ### Task Handler Pattern
 
 To add a new task type:
-1. Add an enum value to `TaskType`
-2. Create a `@Component` implementing `TaskHandler` (must return `getTaskType()` and implement `execute()`)
-3. It auto-registers via `TaskHandlerRegistry` (Spring bean discovery at `@PostConstruct`)
+1. Ship a Flyway migration that widens the `chk_task_type` CHECK constraint to permit the new value (expand-then-deploy)
+2. Add an enum value to `TaskType`
+3. Create a `@Component` implementing `TaskHandler` (must return `getTaskType()` and implement `execute()`)
+4. It auto-registers via `TaskHandlerRegistry` (Spring bean discovery at `@PostConstruct`)
+
+The CHECK constraint must permit the new value before any instance running the new code inserts it. See [docs/adding-enum-values.md](docs/adding-enum-values.md) for the full expand-then-deploy recipe (and the riskier removal/contract path).
 
 Existing handlers: `OrderCancelHandler`, `PaymentRefundHandler`, `PaymentVoidHandler` -- each calls an external service via WebClient with Resilience4j circuit breakers. Retry delays use exponential backoff with 10-25% jitter to prevent thundering herd.
 
@@ -80,7 +83,7 @@ The controller does NOT catch exceptions locally -- all exception-to-HTTP mappin
 - JSONB columns for `payload`, `metadata`, and `execution_result` on `ScheduledTask`
 - Partial indexes on active task statuses for efficient polling queries
 - `shedlock` table for distributed lock coordination
-- **Important**: The SQL migration has CHECK constraints restricting `task_type` and `status` values -- adding new enum values requires a new migration
+- **Important**: The SQL migration has CHECK constraints restricting `task_type` and `status` values -- adding new enum values requires a new migration (expand-then-deploy recipe in [docs/adding-enum-values.md](docs/adding-enum-values.md))
 
 ### Task Status Lifecycle
 
