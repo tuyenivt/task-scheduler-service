@@ -91,7 +91,8 @@ public class TaskPollingService {
         log.info("Task polling service shut down");
     }
 
-    @Scheduled(fixedDelayString = "${task-scheduler.poll-interval-ms:30000}")
+    @Scheduled(fixedDelayString = "${task-scheduler.poll-interval-ms:30000}",
+            initialDelayString = "${task-scheduler.poll-initial-delay-ms:0}")
     @SchedulerLock(name = "taskPollingJob", lockAtLeastFor = "10s", lockAtMostFor = "5m")
     public void pollAndProcessTasks() {
         if (shuttingDown.get()) {

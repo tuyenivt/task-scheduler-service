@@ -1,11 +1,11 @@
 package com.example.taskscheduler.validation;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -14,7 +14,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class JsonSizeWithinValidator implements ConstraintValidator<JsonSizeWithin, Map<String, Object>> {
 
-    private final ObjectMapper objectMapper;
+    private final JsonMapper jsonMapper;
     private int maxBytes;
 
     @Override
@@ -30,8 +30,8 @@ public class JsonSizeWithinValidator implements ConstraintValidator<JsonSizeWith
 
         int size;
         try {
-            size = objectMapper.writeValueAsString(value).getBytes(StandardCharsets.UTF_8).length;
-        } catch (JsonProcessingException e) {
+            size = jsonMapper.writeValueAsString(value).getBytes(StandardCharsets.UTF_8).length;
+        } catch (JacksonException e) {
             log.warn("Failed to serialize payload for size validation; rejecting: {}", e.getMessage());
             context.disableDefaultConstraintViolation();
             context.buildConstraintViolationWithTemplate("payload is not valid JSON").addConstraintViolation();

@@ -4,7 +4,7 @@
 # cached independently in subsequent rebuilds.
 # Stage 2 is a slim JRE-only runtime image.
 
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /workspace
 
 # Gradle wrapper and build inputs first so dependency resolution is cached
@@ -23,7 +23,7 @@ RUN ./gradlew --no-daemon clean bootJar -x test
 RUN mkdir -p /workspace/extracted && \
     java -Djarmode=tools -jar /workspace/build/libs/*.jar extract --layers --destination /workspace/extracted
 
-FROM eclipse-temurin:21-jre AS runtime
+FROM eclipse-temurin:25-jre AS runtime
 WORKDIR /app
 
 # Run as non-root.

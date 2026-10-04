@@ -10,21 +10,24 @@ import com.example.taskscheduler.exception.ExternalServiceException;
 import com.example.taskscheduler.exception.InvalidTaskStateException;
 import com.example.taskscheduler.exception.TaskNotFoundException;
 import com.example.taskscheduler.service.TaskManagementService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -47,7 +50,7 @@ class TaskControllerTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private JsonMapper jsonMapper;
 
     @MockitoBean
     private TaskManagementService taskManagementService;
@@ -78,10 +81,28 @@ class TaskControllerTest {
 
             mockMvc.perform(post(BASE)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(body)))
+                            .content(jsonMapper.writeValueAsString(body)))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.id").value(taskId.toString()));
+        }
+
+        @Test
+        @DisplayName("POST / without preventDuplicates keeps the true default")
+        void omittedPreventDuplicatesDefaultsToTrue() throws Exception {
+            when(taskManagementService.createTask(any())).thenReturn(
+                    TaskResponse.builder().id(UUID.randomUUID()).build());
+
+            mockMvc.perform(post(BASE)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"taskType": "ORDER_CANCEL", "referenceId": "ORD-DEFAULT"}
+                                    """))
+                    .andExpect(status().isCreated());
+
+            var captor = ArgumentCaptor.forClass(CreateTaskRequest.class);
+            verify(taskManagementService).createTask(captor.capture());
+            assertThat(captor.getValue().isPreventDuplicates()).isTrue();
         }
     }
 
@@ -96,7 +117,7 @@ class TaskControllerTest {
 
             mockMvc.perform(post(BASE)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(body)))
+                            .content(jsonMapper.writeValueAsString(body)))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.success").value(false))
                     .andExpect(jsonPath("$.message").value("Validation failed"))
@@ -129,7 +150,7 @@ class TaskControllerTest {
 
             mockMvc.perform(post(BASE)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(body)))
+                            .content(jsonMapper.writeValueAsString(body)))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.success").value(false))
                     .andExpect(jsonPath("$.message").value(

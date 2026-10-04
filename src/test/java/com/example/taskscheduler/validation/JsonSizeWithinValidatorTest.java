@@ -1,10 +1,10 @@
 package com.example.taskscheduler.validation;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintValidatorContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -21,7 +21,7 @@ class JsonSizeWithinValidatorTest {
 
     @BeforeEach
     void setUp() {
-        validator = new JsonSizeWithinValidator(new ObjectMapper());
+        validator = new JsonSizeWithinValidator(new JsonMapper());
         var annotation = mock(JsonSizeWithin.class);
         when(annotation.maxBytes()).thenReturn(64);
         validator.initialize(annotation);

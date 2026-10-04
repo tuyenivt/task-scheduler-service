@@ -1,10 +1,10 @@
 # Task Scheduler Service
 
-A high-volume, distributed task scheduler service for back-office operations built with Java 21, Spring Boot 3, and PostgreSQL.
+A high-volume, distributed task scheduler service for back-office operations built with Java 25, Spring Boot 4, and PostgreSQL.
 
 ## Features
 
-- **Virtual Threads (Java 21)**: High-concurrency task processing with minimal resource overhead
+- **Virtual Threads**: High-concurrency task processing with minimal resource overhead
 - **Distributed Task Locking**: PostgreSQL `FOR UPDATE SKIP LOCKED` prevents duplicate task processing across multiple instances
 - **Flexible Task Types**: Extensible handler pattern for different task types (order cancellation, payment refunds, etc.)
 - **Configurable Retry Logic**: Per-task retry configuration with exponential backoff and jitter to prevent thundering herd
@@ -58,8 +58,8 @@ flowchart TB
 
 | Component        | Technology                        |
 |------------------|-----------------------------------|
-| Language         | Java 21 with Virtual Threads      |
-| Framework        | Spring Boot 3.5                   |
+| Language         | Java 25 with Virtual Threads      |
+| Framework        | Spring Boot 4.1                   |
 | Database         | PostgreSQL with JSONB             |
 | Distributed Lock | ShedLock + PostgreSQL SKIP LOCKED |
 | HTTP Client      | WebClient (non-blocking)          |
@@ -71,9 +71,8 @@ flowchart TB
 
 ### Prerequisites
 
-- Java 21+
-- Gradle 8.14+
-- PostgreSQL 18.1+
+- Java 25+
+- PostgreSQL 18.6+
 
 ### Local Development
 
@@ -85,7 +84,7 @@ flowchart TB
 2. **Set up PostgreSQL:**
     ```bash
     # Using Docker
-    docker run -d --name taskscheduler-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=taskscheduler -p 5432:5432 postgres:18.3-alpine
+    docker run -d --name taskscheduler-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=taskscheduler -p 5432:5432 postgres:18.6-alpine
     ```
 
 3. **Run the application:**

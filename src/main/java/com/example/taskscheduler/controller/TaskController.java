@@ -128,7 +128,7 @@ public class TaskController {
     @Operation(summary = "Create multiple tasks", description = "Create multiple tasks in a single request")
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<ApiResponse<BatchCreateResult>> createTasks(
-            @Valid @RequestBody
+            @RequestBody
             @Size(max = 500, message = "Batch must contain at most 500 task requests")
             List<@Valid CreateTaskRequest> requests) {
         log.info("API: Batch create {} tasks", requests.size());

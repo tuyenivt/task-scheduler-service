@@ -33,7 +33,6 @@ spring:
     show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
         jdbc:
           batch_size: 50
@@ -47,8 +46,12 @@ spring:
     validate-on-migrate: true
 
   jackson:
-    serialization:
-      write-dates-as-timestamps: false
+    # Jackson 3 detects constructor parameter names by default and binds the
+    # Lombok DTOs through their @AllArgsConstructor. That skips @Builder.Default
+    # (preventDuplicates silently becomes false) and rejects omitted primitive
+    # fields. Disabling it restores no-arg constructor + setter binding.
+    mapper:
+      detect-parameter-names: false
     deserialization:
       fail-on-unknown-properties: false
     default-property-inclusion: non_null
@@ -56,6 +59,10 @@ spring:
 task-scheduler:
   # Polling interval for fetching pending tasks (in milliseconds)
   poll-interval-ms: ${POLL_INTERVAL_MS:30000}
+
+  # Delay before the first poll after startup (in milliseconds). fixedDelay
+  # alone fires once immediately on startup regardless of poll-interval-ms.
+  poll-initial-delay-ms: ${POLL_INITIAL_DELAY_MS:0}
 
   # Maximum tasks to fetch per poll cycle
   batch-size: ${TASK_BATCH_SIZE:100}
@@ -198,8 +205,9 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
-    export:
-      prometheus:
+  prometheus:
+    metrics:
+      export:
         enabled: true
   # Distributed tracing via Micrometer -> OTel bridge -> OTLP exporter.
   # Defaults assume a local Jaeger or Tempo on http://localhost:4318
@@ -210,9 +218,11 @@ management:
       probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
     propagation:
       type: W3C
-  otlp:
+  opentelemetry:
     tracing:
-      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
   observations:
     http:
       client:

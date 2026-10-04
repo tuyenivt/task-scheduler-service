@@ -49,6 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(properties = {
         // Disable the automatic poller; we drive it manually.
         "task-scheduler.poll-interval-ms=999999999",
+        "task-scheduler.poll-initial-delay-ms=999999999",
         // Disable the stale-task cleanup so it does not interfere with the run.
         "task-scheduler.stale-task-check-interval-ms=999999999",
         "slack.enabled=false",

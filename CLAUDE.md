@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test Commands
 
 ```bash
-# Build (uses Gradle wrapper, Gradle 8.14.4)
+# Build (uses Gradle wrapper, Gradle 9.7.1)
 ./gradlew clean build
 
 # Build skipping tests
@@ -26,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a distributed task scheduler service (Java 21 / Spring Boot 3.5 / PostgreSQL) for back-office operations like order cancellation and payment processing.
+This is a distributed task scheduler service (Java 25 / Spring Boot 4.1 / PostgreSQL) for back-office operations like order cancellation and payment processing.
 
 ### Core Processing Pipeline
 

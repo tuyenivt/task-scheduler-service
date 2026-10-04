@@ -8,17 +8,17 @@ import com.example.taskscheduler.domain.enums.TaskType;
 import com.example.taskscheduler.domain.repository.ScheduledTaskRepository;
 import com.example.taskscheduler.domain.repository.TaskExecutionLogRepository;
 import com.example.taskscheduler.dto.CreateTaskRequest;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
 import java.util.Map;
@@ -35,7 +35,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         webEnvironment = SpringBootTest.WebEnvironment.MOCK,
         properties = {
                 "spring.main.web-application-type=servlet",
+                // Both are needed: fixedDelay fires once at startup unless the
+                // initial delay is also pushed out, and that first poll would
+                // race the tests' PENDING fixtures.
                 "task-scheduler.poll-interval-ms=999999999",
+                "task-scheduler.poll-initial-delay-ms=999999999",
                 "slack.enabled=false"
         }
 )
@@ -48,7 +52,7 @@ class TaskSchedulerIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private JsonMapper jsonMapper;
 
     @Autowired
     private ScheduledTaskRepository taskRepository;
@@ -80,7 +84,7 @@ class TaskSchedulerIntegrationTest {
 
             mockMvc.perform(post("/api/v1/tasks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(request)))
+                            .content(jsonMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.success").value(true))
                     .andExpect(jsonPath("$.data.taskType").value("ORDER_CANCEL"))
@@ -118,13 +122,13 @@ class TaskSchedulerIntegrationTest {
             // First creation should succeed
             mockMvc.perform(post("/api/v1/tasks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(request)))
+                            .content(jsonMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated());
 
             // Second creation with same reference should return 409 Conflict
             mockMvc.perform(post("/api/v1/tasks")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(request)))
+                            .content(jsonMapper.writeValueAsString(request)))
                     .andExpect(status().isConflict());
 
             // Should still only have 1 task
@@ -149,7 +153,7 @@ class TaskSchedulerIntegrationTest {
 
             mockMvc.perform(post("/api/v1/tasks/batch")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(requests)))
+                            .content(jsonMapper.writeValueAsString(requests)))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.data.created", hasSize(2)));
 
@@ -282,7 +286,7 @@ class TaskSchedulerIntegrationTest {
 
             mockMvc.perform(post("/api/v1/tasks/bulk/cancel")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(bulkRequest)))
+                            .content(jsonMapper.writeValueAsString(bulkRequest)))
                     .andExpect(status().isOk())
                     // Bulk cancel now returns BulkCancelResult { succeeded, failed }
                     // instead of an opaque count. Both ids were PENDING so both succeed.

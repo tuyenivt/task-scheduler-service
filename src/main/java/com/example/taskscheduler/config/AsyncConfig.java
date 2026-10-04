@@ -15,7 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Configuration for async processing using Java 21 Virtual Threads.
+ * Configuration for async processing using Java Virtual Threads.
  * <p>
  * Virtual threads provide:
  * - Lightweight threads (millions possible vs thousands for platform threads)
